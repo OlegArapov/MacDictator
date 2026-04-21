@@ -14,10 +14,19 @@
 ## Требования
 
 - macOS на Apple Silicon (M1 и новее) — MLX работает только на Apple GPU.
-- Python 3.10+.
 - Права на доступ к микрофону и Accessibility (для вставки текста через `Cmd+V`).
 
-## Установка
+## Установка — простой способ (.dmg)
+
+[**Скачать последний релиз**](https://github.com/OlegArapov/MacDictator/releases/latest)
+
+1. Скачай `MacDictator-X.Y.Z.dmg`
+2. Открой DMG и перетащи `MacDictator.app` в `Applications`
+3. При первом запуске macOS скажет "cannot be opened because it is from an unidentified developer". Правый клик по приложению → **Open** → подтверди. Это один раз.
+4. Разреши доступ к **Микрофону** и **Accessibility** в *System Settings → Privacy & Security*
+5. При первой транскрипции скачается модель Whisper `large-v3` (~3 ГБ) в `~/.cache/huggingface/`. Единоразово.
+
+## Установка — из исходников
 
 Нужен Python 3.10+ (рекомендую 3.12 через Homebrew: `brew install python@3.12`).
 
