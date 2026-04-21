@@ -19,21 +19,19 @@
 
 ## Установка
 
+Нужен Python 3.10+ (рекомендую 3.12 через Homebrew: `brew install python@3.12`).
+
 ```bash
 git clone https://github.com/OlegArapov/MacDictator.git
 cd MacDictator
 
-python3 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt  # если будет добавлен; пока см. зависимости ниже
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-Если `requirements.txt` ещё нет, установи зависимости вручную:
-
-```bash
-pip install customtkinter openai sounddevice soundfile numpy \
-            pyperclip pyautogui pynput psutil mlx-whisper mlx
-```
+Установка зависимостей занимает пару минут — `torch`, `mlx`, `numpy` тяжёлые.
 
 ## Запуск
 
@@ -42,9 +40,28 @@ source venv/bin/activate
 python app.py
 ```
 
-При первом запуске macOS попросит разрешить доступ к микрофону и Accessibility — подтверди в **System Settings → Privacy & Security**.
+Или без активации venv:
 
-Первый запуск транскрипции скачает модель `whisper-large-v3-mlx` (~3 ГБ) из Hugging Face в кеш `~/.cache/huggingface`.
+```bash
+venv/bin/python app.py
+```
+
+**Первый запуск:**
+1. macOS попросит разрешить **Микрофон** и **Accessibility** — подтверди в *System Settings → Privacy & Security*. Без Accessibility не работает авто-вставка `Cmd+V`.
+2. Первая транскрипция скачает модель `whisper-large-v3-mlx` (~3 ГБ) в `~/.cache/huggingface/hub/`. Кеш глобальный — если модель уже есть (например, от другого проекта), скачивания не будет.
+
+## Перенос проекта в другую папку
+
+Venv привязан к абсолютному пути — после `mv` папки интерпретатор в `venv/bin/python` будет ссылаться на старое место и venv сломается. Решение:
+
+```bash
+rm -rf venv
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Модель Whisper в `~/.cache/huggingface/` не теряется и качать её заново не нужно.
 
 ## Горячие клавиши
 
