@@ -48,9 +48,24 @@ macOS попросит разрешить три вещи (все нужны):
 
 Первая транскрипция скачает модель `whisper-large-v3-mlx` (~3 ГБ) в `~/.cache/huggingface/hub/`. Кеш глобальный — если модель уже есть, скачиваться не будет.
 
-## Про `.app`/`.dmg` сборку
+## Установка — .dmg (для пользователей без Python)
 
-Экспериментальная `.app`-сборка через PyInstaller работает, но на неподписанном приложении macOS ведёт себя непредсказуемо — pynput может не получить глобальный доступ к клавиатуре даже после явного разрешения в System Settings. **Для стабильной работы `.app` нужна подпись Apple Developer ID ($99/год).** Без неё — используй `.command`.
+[**Скачать MacDictator-1.0.0.dmg**](https://github.com/OlegArapov/MacDictator/releases/latest)
+
+Приложение не подписано Apple Developer ID, поэтому macOS потребует несколько ручных шагов. Делается один раз:
+
+1. Скачай DMG, открой, перетащи `MacDictator.app` в `Applications`
+2. В терминале сними карантин (macOS иначе покажет "damaged"):
+   ```bash
+   xattr -cr /Applications/MacDictator.app
+   ```
+3. Запусти через Launchpad → macOS скажет "unidentified developer" → **правый клик → Open** → подтверди. Это один раз.
+4. **Разреши Input Monitoring** (*System Settings → Privacy & Security → Input Monitoring*) → `+` → `/Applications/MacDictator.app` → включи галочку. Нужно для глобального hotkey.
+5. **Разреши Accessibility** (*System Settings → Privacy & Security → Accessibility*) → `+` → `/Applications/MacDictator.app` → включи галочку. Нужно для вставки текста в другие приложения.
+6. **Закрой и запусти приложение заново**, чтобы разрешения применились.
+7. При первой транскрипции скачается модель Whisper `large-v3` (~3 ГБ) в `~/.cache/huggingface/`.
+
+**Важно про обновления:** при установке новой версии `.app` её подпись отличается от предыдущей, и macOS может не принять старые разрешения TCC. В этом случае надо удалить MacDictator из списков Input Monitoring и Accessibility и добавить заново.
 
 ## Перенос проекта в другую папку
 
