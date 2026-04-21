@@ -35,14 +35,13 @@ pip install -r requirements.txt
 
 ## Запуск
 
-```bash
-source venv/bin/activate
-python app.py
-```
+**Двойным кликом** — открой `MacDictator.command` в Finder. Скрипт сам проверит venv (пересоздаст, если сломан), доустановит зависимости и запустит приложение.
 
-Или без активации venv:
+**Из терминала:**
 
 ```bash
+./MacDictator.command
+# или
 venv/bin/python app.py
 ```
 
