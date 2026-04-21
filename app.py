@@ -67,7 +67,42 @@ MLX_MODELS = {
     "large-v3": "mlx-community/whisper-large-v3-mlx",
 }
 
+MLX_MODEL_APPROX_MB = 3072  # large-v3 is ~3 GB
+
 _mlx_lock = threading.Lock()  # prevents concurrent model loads
+
+
+def _hf_cache_dir(repo):
+    return os.path.expanduser(
+        f"~/.cache/huggingface/hub/models--{repo.replace('/', '--')}"
+    )
+
+
+def _mlx_model_downloaded(repo):
+    """True if HF snapshot for repo is fully cached (no network lookups)."""
+    if not mlx_whisper:
+        return False
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(repo, local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
+def _hf_cache_size_mb(repo):
+    """Return current cached size in MB for repo (counts snapshot + blobs)."""
+    base = _hf_cache_dir(repo)
+    if not os.path.isdir(base):
+        return 0
+    total = 0
+    for root, _, files in os.walk(base, followlinks=False):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total / (1024 * 1024)
 
 _DEFAULT_PROMPTS = {
     "preamble": (
@@ -1051,9 +1086,62 @@ class DictatorApp(ctk.CTk):
         mlx_top.pack(fill="x", padx=8, pady=(6, 8))
         ctk.CTkLabel(mlx_top, text="MLX Whisper", font=("SF Pro Text", 14, "bold"),
                      text_color=C["text"]).pack(side="left")
-        mlx_status = "OK" if mlx_whisper else "Not installed"
-        ctk.CTkLabel(mlx_top, text=mlx_status, font=("SF Pro Text", 13),
-                     text_color=C["green"] if mlx_whisper else C["red"]).pack(side="right")
+
+        default_repo = MLX_MODELS["large-v3"]
+
+        def _mlx_current_status():
+            if not mlx_whisper:
+                return ("Not installed", C["red"])
+            if _mlx_model_downloaded(default_repo):
+                return ("Ready", C["green"])
+            return ("Model not downloaded", C["orange"])
+
+        _txt, _col = _mlx_current_status()
+        mlx_status_lbl = ctk.CTkLabel(mlx_top, text=_txt, font=("SF Pro Text", 13),
+                                      text_color=_col)
+        mlx_status_lbl.pack(side="right")
+
+        mlx_action_frame = ctk.CTkFrame(mlx_frame, fg_color="transparent")
+        if mlx_whisper and not _mlx_model_downloaded(default_repo):
+            mlx_action_frame.pack(fill="x", padx=8, pady=(0, 8))
+
+            dl_btn = ctk.CTkButton(mlx_action_frame,
+                                   text=f"Download model (~{MLX_MODEL_APPROX_MB // 1024} GB)",
+                                   height=32, fg_color=C["accent"])
+            dl_btn.pack(fill="x")
+
+            def _start_download():
+                dl_btn.configure(state="disabled")
+                state = {"done": False, "error": None}
+
+                def _bg():
+                    try:
+                        from huggingface_hub import snapshot_download
+                        snapshot_download(default_repo)
+                    except Exception as e:
+                        state["error"] = str(e)
+                    finally:
+                        state["done"] = True
+
+                threading.Thread(target=_bg, daemon=True).start()
+
+                def _tick():
+                    if state["done"]:
+                        if state["error"]:
+                            dl_btn.configure(state="normal", text="Retry download")
+                            mlx_status_lbl.configure(text="Download failed", text_color=C["red"])
+                        else:
+                            mlx_action_frame.pack_forget()
+                            mlx_status_lbl.configure(text="Ready", text_color=C["green"])
+                        return
+                    mb = _hf_cache_size_mb(default_repo)
+                    pct = min(99, int(mb * 100 / MLX_MODEL_APPROX_MB))
+                    dl_btn.configure(text=f"Downloading... {pct}%  ({mb:.0f} / {MLX_MODEL_APPROX_MB} MB)")
+                    dl_btn.after(500, _tick)
+
+                _tick()
+
+            dl_btn.configure(command=_start_download)
 
         # Microphone status
         mic_frame = ctk.CTkFrame(keys_tab, fg_color=C["card"], corner_radius=8)
@@ -1508,6 +1596,8 @@ class DictatorApp(ctk.CTk):
             if not _mlx_lock.acquire(blocking=False):
                 return  # another load already in progress
             try:
+                if not _mlx_model_downloaded(repo):
+                    return  # skip preload; download is user-initiated from Setup
                 self.after(0, lambda: self.update_status(f"Loading {model_name}...", "orange"))
                 import mlx.core as mx
                 from mlx_whisper.transcribe import ModelHolder
@@ -1815,6 +1905,9 @@ class DictatorApp(ctk.CTk):
                 repo = MLX_MODELS.get(model_name)
                 if not repo:
                     raise Exception(f"Unknown model: {model_name}")
+
+                if not _mlx_model_downloaded(repo):
+                    raise Exception("Model not downloaded. Open Setup → Download model")
 
                 # If translating →RU, user speaks English
                 if translate_to == "→RU":
