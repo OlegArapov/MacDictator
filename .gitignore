@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+
+.DS_Store
+.vscode/
+.claude/
+.superpowers/
+.git.backup/
+docs/superpowers/
+
+keys.json
+history.json
+settings.json
+.macdictator.lock
