@@ -1954,18 +1954,17 @@ class DictatorApp(ctk.CTk):
                     if len(chunks) > 1:
                         self.after(0, lambda i=ci, n=len(chunks):
                                    self.update_status(f"Whisper {i+1}/{n}...", "orange"))
-                    chunk_file = os.path.join(tempfile.gettempdir(), f"macdictator_chunk_{ci}.wav")
-                    sf.write(chunk_file, chunk, self.samplerate)
 
-                    chunk_dur = len(chunk) / self.samplerate
+                    chunk_arr = np.asarray(chunk, dtype=np.float32).reshape(-1)
+                    chunk_dur = len(chunk_arr) / self.samplerate
                     timeout_sec = max(120, int(chunk_dur * 10))
                     _result_box = [None, None]
 
-                    def _do_transcribe(_f=chunk_file):
+                    def _do_transcribe(_a=chunk_arr):
                         try:
                             with _mlx_lock:
                                 r = mlx_whisper.transcribe(
-                                    _f, path_or_hf_repo=repo,
+                                    _a, path_or_hf_repo=repo,
                                     language=_lang, **_whisper_kwargs)
                             _result_box[0] = r
                         except Exception as e:

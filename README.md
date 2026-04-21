@@ -16,17 +16,7 @@
 - macOS на Apple Silicon (M1 и новее) — MLX работает только на Apple GPU.
 - Права на доступ к микрофону и Accessibility (для вставки текста через `Cmd+V`).
 
-## Установка — простой способ (.dmg)
-
-[**Скачать последний релиз**](https://github.com/OlegArapov/MacDictator/releases/latest)
-
-1. Скачай `MacDictator-X.Y.Z.dmg`
-2. Открой DMG и перетащи `MacDictator.app` в `Applications`
-3. При первом запуске macOS скажет "cannot be opened because it is from an unidentified developer". Правый клик по приложению → **Open** → подтверди. Это один раз.
-4. Разреши доступ к **Микрофону** и **Accessibility** в *System Settings → Privacy & Security*
-5. При первой транскрипции скачается модель Whisper `large-v3` (~3 ГБ) в `~/.cache/huggingface/`. Единоразово.
-
-## Установка — из исходников
+## Установка
 
 Нужен Python 3.10+ (рекомендую 3.12 через Homebrew: `brew install python@3.12`).
 
@@ -44,19 +34,23 @@ pip install -r requirements.txt
 
 ## Запуск
 
-**Двойным кликом** — открой `MacDictator.command` в Finder. Скрипт сам проверит venv (пересоздаст, если сломан), доустановит зависимости и запустит приложение.
+Двойным кликом открой `MacDictator.command` в Finder. Скрипт сам проверит venv (пересоздаст, если сломан), доустановит зависимости и запустит приложение.
 
-**Из терминала:**
+Альтернативно из терминала: `./MacDictator.command` или `venv/bin/python app.py`.
 
-```bash
-./MacDictator.command
-# или
-venv/bin/python app.py
-```
+## Первый запуск
 
-**Первый запуск:**
-1. macOS попросит разрешить **Микрофон** и **Accessibility** — подтверди в *System Settings → Privacy & Security*. Без Accessibility не работает авто-вставка `Cmd+V`.
-2. Первая транскрипция скачает модель `whisper-large-v3-mlx` (~3 ГБ) в `~/.cache/huggingface/hub/`. Кеш глобальный — если модель уже есть (например, от другого проекта), скачивания не будет.
+macOS попросит разрешить три вещи (все нужны):
+
+1. **Микрофон** — чтобы записывать голос
+2. **Input Monitoring** (*System Settings → Privacy & Security → Input Monitoring*) — чтобы слушать глобальный hotkey. Разрешение надо дать **Terminal.app** (или iTerm, если используешь его), так как именно оттуда запускается Python.
+3. **Accessibility** (*System Settings → Privacy & Security → Accessibility*) — чтобы вставлять текст через `Cmd+V` в другие приложения. Тоже для Terminal/iTerm.
+
+Первая транскрипция скачает модель `whisper-large-v3-mlx` (~3 ГБ) в `~/.cache/huggingface/hub/`. Кеш глобальный — если модель уже есть, скачиваться не будет.
+
+## Про `.app`/`.dmg` сборку
+
+Экспериментальная `.app`-сборка через PyInstaller работает, но на неподписанном приложении macOS ведёт себя непредсказуемо — pynput может не получить глобальный доступ к клавиатуре даже после явного разрешения в System Settings. **Для стабильной работы `.app` нужна подпись Apple Developer ID ($99/год).** Без неё — используй `.command`.
 
 ## Перенос проекта в другую папку
 
