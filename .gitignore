@@ -2,6 +2,12 @@ venv/
 __pycache__/
 *.pyc
 
+build/
+dist/
+*.icns
+icon.png
+MacDictator.iconset/
+
 .DS_Store
 .vscode/
 .claude/
