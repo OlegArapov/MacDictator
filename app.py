@@ -28,8 +28,24 @@ try:
 except ImportError:
     mlx_whisper = None
 
+def _app_data_dir():
+    """Return a stable user-writable directory for app state."""
+    import sys
+    if getattr(sys, 'frozen', False):
+        base = os.path.expanduser("~/Library/Application Support/MacDictator")
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        pass
+    return base
+
+
+_DATA_DIR = _app_data_dir()
+
 # --- API KEYS ---
-KEYS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.json")
+KEYS_FILE = os.path.join(_DATA_DIR, "keys.json")
 
 def _load_keys():
     defaults = {"openai": "", "deepseek": ""}
@@ -56,10 +72,10 @@ openai_client, deepseek_client = _make_clients(_api_keys)
 
 APP_VERSION = "1.0.0"
 MAX_RECORD_SEC = 300
-LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".macdictator.lock")
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.json")
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
-PROMPTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts.json")
+LOCK_FILE = os.path.join(_DATA_DIR, ".macdictator.lock")
+HISTORY_FILE = os.path.join(_DATA_DIR, "history.json")
+SETTINGS_FILE = os.path.join(_DATA_DIR, "settings.json")
+PROMPTS_FILE = os.path.join(_DATA_DIR, "prompts.json")
 
 DEFAULTS = {"engine": "MLX", "model": "large-v3", "translate": "Off", "translate_model": "DeepSeek", "cleanup": "Off", "cleanup_model": "DeepSeek", "send": "Off"}
 
@@ -1262,10 +1278,12 @@ class DictatorApp(ctk.CTk):
 
     def _setup_tray(self):
         """Launch menu bar tray icon as a separate process (rumps)."""
+        import sys
+        if getattr(sys, 'frozen', False):
+            return  # sys.executable points to the app bundle, not a usable Python
         try:
             tray_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tray.py")
             if os.path.exists(tray_script):
-                import sys
                 self._tray_proc = subprocess.Popen(
                     [sys.executable, tray_script, str(os.getpid())])
         except Exception as e:
@@ -2375,31 +2393,19 @@ class DictatorApp(ctk.CTk):
 _lock_fd = None  # kept open for fcntl.flock lifetime
 
 def _check_single_instance():
-    """Ensure only one instance is running using fcntl.flock."""
+    """Exit immediately if another instance holds the lock."""
     global _lock_fd
-    import signal
     import atexit
 
-    # Kill previous instance if it's actually MacDictator
-    if os.path.exists(LOCK_FILE):
-        try:
-            with open(LOCK_FILE, "r") as f:
-                old_pid = int(f.read().strip())
-            proc = psutil.Process(old_pid)
-            cmdline = " ".join(proc.cmdline()).lower()
-            if "macdictator" in cmdline or "app.py" in cmdline:
-                os.kill(old_pid, signal.SIGTERM)
-                time.sleep(0.5)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, ProcessLookupError):
-            pass
-
-    # Acquire exclusive lock (atomic, no race condition)
-    _lock_fd = open(LOCK_FILE, "w")
+    _lock_fd = open(LOCK_FILE, "a+")
     try:
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         _lock_fd.close()
         raise SystemExit("Another MacDictator instance is running")
+
+    _lock_fd.seek(0)
+    _lock_fd.truncate()
     _lock_fd.write(str(os.getpid()))
     _lock_fd.flush()
 
