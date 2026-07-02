@@ -1,0 +1,11 @@
+customtkinter
+openai
+sounddevice
+soundfile
+numpy
+pyperclip
+pyautogui
+pynput
+psutil
+mlx
+mlx-whisper
