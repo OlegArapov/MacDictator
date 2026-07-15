@@ -621,29 +621,34 @@ class BubbleCluster:
             return [(0.0, 0.0, float(self._master.winfo_screenwidth()),
                      float(self._master.winfo_screenheight()))]
 
-    def _rebuild(self):
-        for b in self._bubbles:
-            try:
-                b.destroy()
-            except Exception:
-                pass
-        self._bubbles = []
+    def _ensure(self):
+        """Гарантировать по одному баблу на монитор, не пересоздавая без нужды.
+
+        Окна баблов создаём один раз (тяжёлая операция в главном потоке —
+        если делать её в момент хоткея, self.after из потока-слушателя
+        блокируется на Tcl-локе и macOS вырубает event-tap по таймауту).
+        Пересоздаём только когда изменилось число экранов.
+        """
         frames = self._screen_frames()
         positions = _multiscreen.bubble_positions(frames, RecordingBubble._BW, margin_top=6)
-        for (x, y) in positions:
-            b = RecordingBubble(self._master)
-            b._target_pos = (x, y)
-            self._bubbles.append(b)
+        if len(self._bubbles) != len(positions):
+            for b in self._bubbles:
+                try:
+                    b.destroy()
+                except Exception:
+                    pass
+            self._bubbles = [RecordingBubble(self._master) for _ in positions]
+        for b, pos in zip(self._bubbles, positions):
+            b._target_pos = pos
 
     def show_recording(self):
-        self._rebuild()
+        self._ensure()
         for b in self._bubbles:
             b.set_mode("recording")
             b.show_at(*b._target_pos)
 
     def show_transcribing(self):
-        if not self._bubbles:
-            self._rebuild()
+        self._ensure()
         for b in self._bubbles:
             b.set_mode("transcribing")
             b.show_at(*b._target_pos)
@@ -814,6 +819,9 @@ class DictatorApp(ctk.CTk):
 
         self._build_ui()
         self._rec_bubble = BubbleCluster(self)
+        # создать окна баблов заранее, чтобы первый хоткей не творил их
+        # синхронно в главном потоке (иначе таймаут event-tap)
+        self.after(800, self._rec_bubble._ensure)
         self.bind("<Button-1>", self._on_drag_start)
         self.bind("<B1-Motion>", self._on_drag_motion)
         self.bind("<ButtonRelease-1>", self._on_drag_end)
@@ -1921,6 +1929,39 @@ class DictatorApp(ctk.CTk):
                 _mod.keycode_context = orig_kc
 
         kb.Listener._run = _patched_run
+
+        # macOS вырубает event-tap, если колбэк отработал слишком долго
+        # (kCGEventTapDisabledByTimeout). pynput сам его НЕ переподнимает —
+        # после этого глобальный хоткей мёртв до перезапуска слушателя
+        # («работает один раз»). Патчим: ловим disable-события и включаем tap
+        # заново. Заодно ловим момент, когда tap создаётся, чтобы иметь ссылку.
+        try:
+            from pynput._util import darwin as _pd
+            import Quartz as _q
+            _disable_types = (_q.kCGEventTapDisabledByTimeout,
+                              _q.kCGEventTapDisabledByUserInput)
+            if not getattr(_pd.ListenerMixin, "_md_tap_patched", False):
+                _orig_create_tap = _pd.ListenerMixin._create_event_tap
+                _orig_handler = _pd.ListenerMixin._handler
+
+                def _patched_create_tap(self_l):
+                    tap = _orig_create_tap(self_l)
+                    self_l._md_tap = tap
+                    return tap
+
+                def _patched_handler(self_l, proxy, event_type, event, refcon):
+                    if event_type in _disable_types:
+                        tap = getattr(self_l, "_md_tap", None)
+                        if tap is not None:
+                            _q.CGEventTapEnable(tap, True)
+                        return event
+                    return _orig_handler(self_l, proxy, event_type, event, refcon)
+
+                _pd.ListenerMixin._create_event_tap = _patched_create_tap
+                _pd.ListenerMixin._handler = _patched_handler
+                _pd.ListenerMixin._md_tap_patched = True
+        except Exception as e:
+            logging.warning("Could not patch event-tap re-enable: %s", e)
 
         pressed = set()
 

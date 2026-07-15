@@ -12,8 +12,8 @@ OPTIONS = {
         'CFBundleName': 'MacDictator',
         'CFBundleDisplayName': 'MacDictator',
         'CFBundleIdentifier': 'com.macdictator.app',
-        'CFBundleVersion': '1.0.6',
-        'CFBundleShortVersionString': '1.0.6',
+        'CFBundleVersion': '1.0.7',
+        'CFBundleShortVersionString': '1.0.7',
         'NSMicrophoneUsageDescription': 'MacDictator needs microphone access for speech-to-text.',
         'NSAppleEventsUsageDescription': 'MacDictator needs accessibility access to paste text.',
     },
@@ -37,6 +37,13 @@ OPTIONS = {
     'includes': [
         'tkinter',
         '_tkinter',
+        # AppKit импортируется лениво внутри функций (NSScreen/NSWorkspace/
+        # NSApplication для баблов на всех мониторах и гейта Escape) — modulegraph
+        # его сам не увидит, поэтому включаем явно.
+        'AppKit',
+        'Foundation',
+        'objc',
+        'Quartz',
     ],
     'frameworks': [],
 }
