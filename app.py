@@ -451,9 +451,18 @@ class RecordingBubble(ctk.CTkToplevel):
         self._canvas = ctk.CTkCanvas(self, width=self._BW, height=self._BH,
                                      bg="#1A1A24", highlightthickness=0)
         self._canvas.pack(fill="both", expand=True)
+        # клик по баблу активирует MacDictator → Escape начинает отменять
+        self._canvas.bind("<ButtonPress-1>", lambda e: self._activate_parent())
 
         # Set all-spaces immediately (window exists off-screen)
         self.after(100, lambda: self._set_all_spaces_for(self))
+
+    def _activate_parent(self):
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
 
     def show(self):
         self._start_time = time.time()
@@ -1542,6 +1551,8 @@ class DictatorApp(ctk.CTk):
         self.destroy()
 
     def _on_drag_start(self, event):
+        # клик по пилюле делает MacDictator фронтмостом → Escape начинает отменять
+        self._activate_app()
         self._drag_x = event.x
         self._drag_y = event.y
 
@@ -1724,6 +1735,26 @@ class DictatorApp(ctk.CTk):
             self.timer_job = None
         self.timer_label.configure(text="")
 
+    # --- frontmost / activation ---
+    def _is_frontmost(self):
+        try:
+            from AppKit import NSWorkspace
+            fa = NSWorkspace.sharedWorkspace().frontmostApplication()
+            return fa is not None and fa.processIdentifier() == os.getpid()
+        except Exception:
+            return False
+
+    def _activate_app(self):
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
+    def _cancel_if_frontmost(self):
+        if self._is_frontmost():
+            self._cancel()
+
     # --- cancel ---
     def _cancel(self):
         if self.app_state == self.STATE_RECORDING:
@@ -1796,7 +1827,7 @@ class DictatorApp(ctk.CTk):
             elif key == kb.Key.cmd_r:
                 self.after(0, self.toggle_recording)
             elif key == kb.Key.esc:
-                self.after(0, self._cancel)
+                self.after(0, self._cancel_if_frontmost)
             elif ctrl and shift and getattr(key, 'vk', None) == 4:  # macOS VK for 'H'
                 self.after(0, self._toggle_visibility)
 
