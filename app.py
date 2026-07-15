@@ -39,6 +39,8 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 import file_transcribe
+import progress as _progress
+import multiscreen as _multiscreen
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -359,39 +361,37 @@ class VUMeter(ctk.CTkCanvas):
         self._progress_active = False
         self._draw_idle()
 
-    def start_progress(self, estimated_seconds):
-        """Turn VU meter into a progress bar for estimated_seconds."""
+    def start_progress(self, estimated_seconds=None):
+        """Перевести VU-метр в режим прогресс-бара, ведомого долей (set_fraction)."""
         self.active = False
         self._progress_active = True
-        self._progress_start = time.time()
-        self._progress_duration = max(estimated_seconds, 1.0)
-        self._tick_progress()
+        self._fraction = 0.0
+        self._draw_progress()
+
+    def set_fraction(self, frac):
+        self._fraction = max(0.0, min(1.0, frac))
+        if getattr(self, "_progress_active", False):
+            self._draw_progress()
 
     def stop_progress(self):
         self._progress_active = False
         self._draw_idle()
 
-    def _tick_progress(self):
+    def _draw_progress(self):
         if not self._progress_active:
             return
-        elapsed = time.time() - self._progress_start
-        # asymptotic: approaches 95% then slows down
-        raw = elapsed / self._progress_duration
-        progress = min(0.95, raw) if raw < 1.0 else min(0.99, 0.95 + (raw - 1.0) * 0.02)
-        filled = int(progress * self.BLOCKS)
+        filled = int(self._fraction * self.BLOCKS)
         self.delete("all")
         for i in range(self.BLOCKS):
             x = i * (self.BLOCK_W + self.GAP)
             if i < filled:
-                color = "#F59E0B"  # orange for progress
+                color = "#F59E0B"      # orange — заполнено
             elif i == filled:
-                # animate: blink current block
-                color = "#F59E0B" if int(elapsed * 3) % 2 == 0 else "#2A251A"
+                color = "#7A5A1E"      # тусклый — текущий блок
             else:
                 color = "#1A1A1E"
             self.create_rectangle(x, 0, x + self.BLOCK_W, self.BLOCK_H,
                                   fill=color, outline="")
-        self.after(100, self._tick_progress)
 
     def _tick(self):
         if not self.active:
@@ -680,7 +680,7 @@ class DictatorApp(ctk.CTk):
         self.cancelled = False
         self._processing_lock = threading.Lock()
         self._psutil_proc = psutil.Process(os.getpid())
-        self._progress_prefix = "Whisper "
+        self._progress_prefix = "Транскрибация "
 
         # Set saved mic device before opening stream
         self._selected_device = None
@@ -1691,6 +1691,13 @@ class DictatorApp(ctk.CTk):
             text=msg, text_color=colors.get(color, C["text3"]))
         self.update_idletasks()
 
+    def _apply_progress(self, prog, chunks_done):
+        # ETA — после ≥2 обработанных чанков, чтобы не мигало враньё в начале
+        line = prog.status_line(time.time(), min_chunks_done=2,
+                                chunks_done=chunks_done)
+        self.update_status(line, "orange")
+        self.vu.set_fraction(prog.fraction())
+
     # --- timer ---
     def _start_timer(self):
         self.rec_start_time = time.time()
@@ -1980,11 +1987,9 @@ class DictatorApp(ctk.CTk):
         self._stop_timer()
         self._rec_indicator.configure(text="·····", text_color=C["orange"])
         self._pill.configure(border_color=C["orange"])
-        # Estimate processing time: ~0.7x of recording duration for large-v3
-        rec_duration = time.time() - self.rec_start_time if self.rec_start_time else 5.0
-        estimated = max(rec_duration * 0.7, 2.0)
-        self.vu.start_progress(estimated)
-        self.update_status("Whisper...", "orange")
+        self._progress = None            # новая сессия создастся в цикле
+        self.vu.start_progress()
+        self.update_status("Транскрибация 0%", "orange")
         # Lower window so user can click on target app
         threading.Thread(target=self.process_audio, daemon=True).start()
 
@@ -2096,6 +2101,17 @@ class DictatorApp(ctk.CTk):
         )
 
         chunks = self._vad_split(audio, self.samplerate)
+        chunk_durs = [len(np.asarray(c).reshape(-1)) / self.samplerate for c in chunks]
+        total_sec = sum(chunk_durs)
+        prog = getattr(self, "_progress", None)
+        if prog is None:
+            prog = _progress.ProgressState(
+                total_sec=total_sec, base_sec=0.0, done_sec=0.0,
+                start_wall=time.time(), prefix=self._progress_prefix)
+            self._progress = prog
+        elif prog.total_sec <= 0:
+            # сессия задана снаружи (mono-файл) без total — взять из этого прохода
+            prog.total_sec = total_sec
         all_texts = []
         out_segments = []
         offset_samples = 0
@@ -2103,8 +2119,7 @@ class DictatorApp(ctk.CTk):
             if self.cancelled:
                 break
             if len(chunks) > 1:
-                self.after(0, lambda i=ci, n=len(chunks):
-                           self.update_status(f"{self._progress_prefix}{i+1}/{n}...", "orange"))
+                self.after(0, lambda p=prog, n=ci: self._apply_progress(p, n))
 
             chunk_arr = np.asarray(chunk, dtype=np.float32).reshape(-1)
             chunk_dur = len(chunk_arr) / self.samplerate
@@ -2129,6 +2144,7 @@ class DictatorApp(ctk.CTk):
                 raise _result_box[1]
             offset_sec = offset_samples / self.samplerate
             offset_samples += len(chunk_arr)
+            prog.done_sec += chunk_durs[ci]
             if _result_box[0] is None:
                 continue
             segments = _result_box[0].get('segments', [])
@@ -2156,6 +2172,10 @@ class DictatorApp(ctk.CTk):
                     all_texts.append(self._clean_hallucination(chunk_text))
                 except Exception:
                     logging.warning("Chunk %d hallucinated, skipping", ci)
+
+        # зафиксировать завершённый проход как базу для следующего (стерео-канал)
+        prog.base_sec += prog.done_sec
+        prog.done_sec = 0.0
 
         if want_segments:
             return out_segments
@@ -2279,7 +2299,7 @@ class DictatorApp(ctk.CTk):
                     _lang = "en"
                 else:
                     _lang = "ru"
-                self._progress_prefix = "Whisper "
+                self._progress_prefix = "Транскрибация "
                 text = self._whisper_transcribe_array(audio_concat, _lang, want_segments=False)
 
             if self.cancelled:
@@ -2391,9 +2411,11 @@ class DictatorApp(ctk.CTk):
             return
         try:
             separate = self.separate_var.get() == "On"
+            self._progress = None
+            self.after(0, self.vu.start_progress)
 
             def _transcribe(audio, lang, want_segments):
-                self._progress_prefix = "Файл "
+                self._progress_prefix = "Транскрибация "
                 return self._whisper_transcribe_array(audio, lang, want_segments=want_segments)
 
             text = file_transcribe.transcribe_file(path, separate, _transcribe, lang="ru")
