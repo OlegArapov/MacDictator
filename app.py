@@ -2411,14 +2411,26 @@ class DictatorApp(ctk.CTk):
             return
         try:
             separate = self.separate_var.get() == "On"
-            self._progress = None
+
+            # общая сессия прогресса: total задастся в on_decoded (сумма каналов
+            # для стерео, длина канала для моно — mono-путь склеивает каналы в один)
+            self._progress = _progress.ProgressState(
+                total_sec=0.0, base_sec=0.0, done_sec=0.0,
+                start_wall=time.time(), prefix="Транскрибация ")
             self.after(0, self.vu.start_progress)
+
+            def _on_decoded(durs, sep=separate):
+                if sep and len(durs) >= 2:
+                    self._progress.total_sec = sum(durs)
+                elif durs:
+                    self._progress.total_sec = durs[0]
 
             def _transcribe(audio, lang, want_segments):
                 self._progress_prefix = "Транскрибация "
                 return self._whisper_transcribe_array(audio, lang, want_segments=want_segments)
 
-            text = file_transcribe.transcribe_file(path, separate, _transcribe, lang="ru")
+            text = file_transcribe.transcribe_file(
+                path, separate, _transcribe, lang="ru", on_decoded=_on_decoded)
             if self.cancelled:
                 return
             if not text.strip():

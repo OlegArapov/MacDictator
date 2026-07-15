@@ -84,12 +84,15 @@ def decode_audio_file(path):
 
 
 def transcribe_file(path, separate, transcribe_array, lang="ru",
-                    label_left="Я", label_right="Собеседник"):
+                    label_left="Я", label_right="Собеседник", on_decoded=None):
     """Декодировать файл и вернуть текст транскрипции.
 
     separate=True и ≥2 каналов → диалог с метками; иначе — моно, сплошной текст.
+    on_decoded(list_of_channel_durations_sec) вызывается один раз после декода.
     """
     channels, _ = decode_audio_file(path)
+    if on_decoded is not None:
+        on_decoded([len(c) / TARGET_SR for c in channels])
     if separate and len(channels) >= 2:
         segs_left = transcribe_array(channels[0], lang, True)
         segs_right = transcribe_array(channels[1], lang, True)

@@ -162,3 +162,24 @@ def test_transcribe_file_separate_off_mixes_to_mono(tmp_path):
     captured_audio = seen["audio"]
     assert np.allclose(captured_audio, np.ones(sr, dtype=np.float32))
     assert len(captured_audio) == sr
+
+
+def test_transcribe_file_calls_on_decoded_with_durations(tmp_path):
+    # стерео-файл 2с при 16кГц
+    n = 32000
+    data = np.zeros((n, 2), dtype="float32")
+    p = tmp_path / "st.wav"
+    sf.write(str(p), data, 16000)
+
+    seen = {}
+
+    def on_decoded(durs):
+        seen["durs"] = durs
+
+    def fake_transcribe(audio, lang, want_segments):
+        return [] if want_segments else ""
+
+    ft.transcribe_file(str(p), separate=True, transcribe_array=fake_transcribe,
+                       on_decoded=on_decoded)
+    assert len(seen["durs"]) == 2
+    assert seen["durs"][0] == pytest.approx(2.0, abs=0.05)
