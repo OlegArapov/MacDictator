@@ -582,6 +582,8 @@ class RecordingBubble(ctk.CTkToplevel):
                 ('objc_msgSend', lib))
             send_set = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong)(
                 ('objc_msgSend', lib))
+            send_set_level = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(
+                ('objc_msgSend', lib))
 
             app = send(lib.objc_getClass(b'NSApplication'),
                        lib.sel_registerName(b'sharedApplication'))
@@ -589,10 +591,13 @@ class RecordingBubble(ctk.CTkToplevel):
             count = send_long(windows, lib.sel_registerName(b'count'))
             sel_at = lib.sel_registerName(b'objectAtIndex:')
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
+            sel_set_level = lib.sel_registerName(b'setLevel:')
             behavior = (1 << 0) | (1 << 4)
+            NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
             for i in range(count):
                 w = send_idx(windows, sel_at, i)
                 send_set(w, sel_set, behavior)
+                send_set_level(w, sel_set_level, NS_STATUS_WINDOW_LEVEL)
         except Exception:
             pass
 
@@ -1556,6 +1561,8 @@ class DictatorApp(ctk.CTk):
                 ('objc_msgSend', lib))
             send_set = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong)(
                 ('objc_msgSend', lib))
+            send_set_level = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(
+                ('objc_msgSend', lib))
 
             app = send(lib.objc_getClass(b'NSApplication'),
                        lib.sel_registerName(b'sharedApplication'))
@@ -1563,11 +1570,14 @@ class DictatorApp(ctk.CTk):
             count = send_long_ret(windows, lib.sel_registerName(b'count'))
             sel_at = lib.sel_registerName(b'objectAtIndex:')
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
+            sel_set_level = lib.sel_registerName(b'setLevel:')
             # canJoinAllSpaces (1<<0) | stationary (1<<4)
             behavior = (1 << 0) | (1 << 4)
+            NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
             for i in range(count):
                 win = send_idx(windows, sel_at, i)
                 send_set(win, sel_set, behavior)
+                send_set_level(win, sel_set_level, NS_STATUS_WINDOW_LEVEL)
         except Exception as e:
             logging.warning("Failed to set all-spaces: %s", e)
 
