@@ -442,6 +442,8 @@ class RecordingBubble(ctk.CTkToplevel):
         self._smooth = 0.0
         self._start_time = 0.0
         self._active = False
+        self._mode = "recording"
+        self._progress_line = ""
 
         self._sw = self.winfo_screenwidth()
         # Start off-screen (no withdraw — avoids activation on show)
@@ -464,16 +466,25 @@ class RecordingBubble(ctk.CTkToplevel):
         except Exception:
             pass
 
-    def show(self):
+    def show_at(self, x, y):
         self._start_time = time.time()
         self._active = True
         self._smooth = 0.0
-        # Move on-screen (no deiconify — no app activation / space switch)
-        self.geometry(f"{self._BW}x{self._BH}+{(self._sw - self._BW) // 2}+6")
+        self.geometry(f"{self._BW}x{self._BH}+{x}+{y}")
         self.lift()
         # Must set all-spaces every show — macOS ignores it for off-screen windows
         self.after(10, lambda: self._set_all_spaces_for(self))
         self._tick()
+
+    def show(self):
+        # Move on-screen (no deiconify — no app activation / space switch)
+        self.show_at((self._sw - self._BW) // 2, 6)
+
+    def set_mode(self, mode):
+        self._mode = mode
+
+    def set_progress_line(self, text):
+        self._progress_line = text
 
     def hide(self):
         self._active = False
@@ -485,6 +496,10 @@ class RecordingBubble(ctk.CTkToplevel):
 
     def _tick(self):
         if not self._active:
+            return
+        if self._mode == "transcribing":
+            self._draw_transcribing()
+            self.after(80, self._tick)
             return
         self._smooth += (self._volume - self._smooth) * 0.4
 
@@ -528,6 +543,27 @@ class RecordingBubble(ctk.CTkToplevel):
 
         self.after(50, self._tick)
 
+    def _draw_transcribing(self):
+        c = self._canvas
+        w, h = self._BW, self._BH
+        mid = h // 2
+        r = h // 2
+        c.delete("all")
+        bg, edge = "#1A1A24", "#2E2E3E"
+        c.create_oval(0, 0, h, h, fill=bg, outline=edge, width=1)
+        c.create_oval(w - h, 0, w, h, fill=bg, outline=edge, width=1)
+        c.create_rectangle(r, 0, w - r, h, fill=bg, outline="")
+        c.create_line(r, 0, w - r, 0, fill=edge)
+        c.create_line(r, h - 1, w - r, h - 1, fill=edge)
+        # спиннер: дуга, вращаемая по времени
+        elapsed = time.time() - self._start_time
+        ang = int(elapsed * 300) % 360
+        c.create_arc(6, mid - 6, 18, mid + 6, start=ang, extent=270,
+                     style="arc", outline="#F59E0B", width=2)
+        # строка процента/ETA
+        c.create_text(26, mid, text=self._progress_line or "…",
+                      font=("SF Mono", 9, "bold"), fill="#C8C8D4", anchor="w")
+
     @staticmethod
     def _set_all_spaces_for(win):
         """Set all-spaces on a specific toplevel window via ctypes."""
@@ -559,6 +595,65 @@ class RecordingBubble(ctk.CTkToplevel):
                 send_set(w, sel_set, behavior)
         except Exception:
             pass
+
+
+class BubbleCluster:
+    """Набор RecordingBubble по одному на физический монитор."""
+
+    def __init__(self, master):
+        self._master = master
+        self._bubbles = []
+
+    def _screen_frames(self):
+        try:
+            from AppKit import NSScreen
+            frames = []
+            for s in NSScreen.screens():
+                f = s.frame()
+                frames.append((f.origin.x, f.origin.y, f.size.width, f.size.height))
+            return frames
+        except Exception:
+            return [(0.0, 0.0, float(self._master.winfo_screenwidth()),
+                     float(self._master.winfo_screenheight()))]
+
+    def _rebuild(self):
+        for b in self._bubbles:
+            try:
+                b.destroy()
+            except Exception:
+                pass
+        self._bubbles = []
+        frames = self._screen_frames()
+        positions = _multiscreen.bubble_positions(frames, RecordingBubble._BW, margin_top=6)
+        for (x, y) in positions:
+            b = RecordingBubble(self._master)
+            b._target_pos = (x, y)
+            self._bubbles.append(b)
+
+    def show_recording(self):
+        self._rebuild()
+        for b in self._bubbles:
+            b.set_mode("recording")
+            b.show_at(*b._target_pos)
+
+    def show_transcribing(self):
+        if not self._bubbles:
+            self._rebuild()
+        for b in self._bubbles:
+            b.set_mode("transcribing")
+            b.show_at(*b._target_pos)
+
+    def hide(self):
+        for b in self._bubbles:
+            b.hide()
+
+    def set_volume(self, v):
+        for b in self._bubbles:
+            b.set_volume(v)
+
+    def set_progress_line(self, text):
+        for b in self._bubbles:
+            b.set_progress_line(text)
 
 
 def _seg_button(parent, variable, values, command=None, color=None):
@@ -713,7 +808,7 @@ class DictatorApp(ctk.CTk):
             self._active_mic_name = ""
 
         self._build_ui()
-        self._rec_bubble = RecordingBubble(self)
+        self._rec_bubble = BubbleCluster(self)
         self.bind("<Button-1>", self._on_drag_start)
         self.bind("<B1-Motion>", self._on_drag_motion)
         self.bind("<ButtonRelease-1>", self._on_drag_end)
@@ -1708,6 +1803,7 @@ class DictatorApp(ctk.CTk):
                                 chunks_done=chunks_done)
         self.update_status(line, "orange")
         self.vu.set_fraction(prog.fraction())
+        self._rec_bubble.set_progress_line(line)
 
     # --- timer ---
     def _start_timer(self):
@@ -2002,7 +2098,7 @@ class DictatorApp(ctk.CTk):
         self._hotkey_label.configure(text="")
         self.update_status("Recording", "red")
         self.vu.start()
-        self._rec_bubble.show()
+        self._rec_bubble.show_recording()
         self._start_timer()
         threading.Thread(target=lambda: self._beep(2), daemon=True).start()
 
@@ -2013,7 +2109,7 @@ class DictatorApp(ctk.CTk):
         self._recording = False
         self._reset_mic_timer()  # restart idle countdown
         self.vu.stop()
-        self._rec_bubble.hide()
+        self._rec_bubble.show_transcribing()
         threading.Thread(target=lambda: self._beep(1), daemon=True).start()
         self._stop_timer()
         self._rec_indicator.configure(text="·····", text_color=C["orange"])
@@ -2449,6 +2545,7 @@ class DictatorApp(ctk.CTk):
                 total_sec=0.0, base_sec=0.0, done_sec=0.0,
                 start_wall=time.time(), prefix="Транскрибация ")
             self.after(0, self.vu.start_progress)
+            self.after(0, self._rec_bubble.show_transcribing)
 
             def _on_decoded(durs, sep=separate):
                 if sep and len(durs) >= 2:
