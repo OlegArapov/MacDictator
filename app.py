@@ -1601,6 +1601,7 @@ class DictatorApp(ctk.CTk):
             ("cleanup_lite",  "Cleanup · Lite",                          80,  C["orange"]),
             ("cleanup_medium","Cleanup · Medium",                        100, C["orange"]),
             ("cleanup_max",   "Cleanup · Max",                           100, C["orange"]),
+            ("summary",       "Саммари  (пресет «Встреча»)",             140, "#F59E0B"),
             ("translate",     "Перевод  ({lang} = язык назначения)",      50,  C["accent"]),
         ]
 
@@ -2750,7 +2751,8 @@ class DictatorApp(ctk.CTk):
                 self.after(0, lambda m=cleanup_model:
                            self.update_status(f"Саммари ({m})...", "orange"))
                 try:
-                    summary_text = self._llm_call(_prompts["summary"], text, cleanup_model).strip()
+                    _sum_prompt = _prompts.get("summary", _DEFAULT_PROMPTS["summary"])
+                    summary_text = self._llm_call(_sum_prompt, text, cleanup_model).strip()
                 except Exception as e:
                     logging.warning("Summary failed: %s", e)
             if self.cancelled:
