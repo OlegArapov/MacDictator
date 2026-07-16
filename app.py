@@ -2826,6 +2826,12 @@ class DictatorApp(ctk.CTk):
 
     def _on_error(self, msg):
         self._to_idle(f"Error: {msg}", "red")
+        # сообщение об ошибке не должно висеть до следующей записи — гасим само
+        self.after(4000, self._clear_error_status)
+
+    def _clear_error_status(self):
+        if self.app_state == self.STATE_IDLE:
+            self.update_status("Ready", "gray")
 
     def _on_result(self, text, steps=None):
         self.app_state = self.STATE_RESULT
