@@ -305,6 +305,22 @@ C = {
     "pill_active": "#2A2A3A",
 }
 
+# Типичные галлюцинации Whisper на тишине/шуме (YouTube-хвосты, титры и т.п.).
+# Применяются и к склеенному тексту, и к отдельным сегментам (файл + split).
+_HALLUCINATION_PHRASES = [
+    "продолжение следует", "субтитры", "редактор субтитров", "корректор",
+    "субтитры создавал", "субтитры делал", "субтитры сделал",
+    "подписывайтесь", "ставьте лайк", "thank you", "thanks for watching",
+    "subscribe", "like and subscribe", "смотрите в следующей серии",
+    "конец фильма", "музыка", "продолжение в следующей",
+]
+
+
+def _is_hallucination_phrase(text):
+    """Короткий сегмент целиком/почти целиком = известная галлюцинация Whisper."""
+    t = text.lower().strip()
+    return len(text) < 80 and any(p in t for p in _HALLUCINATION_PHRASES)
+
 
 class VUMeter(ctk.CTkCanvas):
     """Classic block-based VU meter with green/yellow/red zones."""
@@ -2336,6 +2352,12 @@ class DictatorApp(ctk.CTk):
                                  cr, lp, nsp, seg.get('text', '')[:60])
                     continue
                 seg_text = seg.get('text', '').strip()
+                # фразовый фильтр галлюцинаций на уровне сегмента — иначе на
+                # тишине в канале (файл + split) вылезают «Продолжение следует…»,
+                # «Субтитры создавал…» и прочие ютуб-хвосты
+                if seg_text and _is_hallucination_phrase(seg_text):
+                    logging.info("Filtered hallucination segment: %r", seg_text[:60])
+                    continue
                 good_texts.append(seg_text)
                 if seg_text:
                     out_segments.append({
@@ -2361,12 +2383,6 @@ class DictatorApp(ctk.CTk):
 
     def _clean_hallucination(self, text):
         """Detect and trim Whisper hallucination patterns. Returns clean text or raises."""
-        _HALLUCINATION_PHRASES = [
-            "продолжение следует", "субтитры", "редактор субтитров", "корректор",
-            "подписывайтесь", "ставьте лайк", "thank you", "thanks for watching",
-            "subscribe", "like and subscribe", "смотрите в следующей серии",
-            "конец фильма", "музыка",
-        ]
         text_lower = text.lower().strip()
 
         # Short text entirely matching a known hallucination phrase
