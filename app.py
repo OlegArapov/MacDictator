@@ -1359,7 +1359,7 @@ class DictatorApp(ctk.CTk):
                               ["DeepSeek", "ChatGPT"], command=lambda: _save_wrap(),
                               color="#D4A054")
         via_seg.pack(side="left", fill="x", expand=True, padx=(0, 12))
-        if self.cleanup_var.get() != "Off":
+        if self.cleanup_var.get() != "Off" or self._preset_uses_llm():
             self._cleanup_model_row.pack(fill="x", pady=(4, 0))
         else:
             self._cleanup_model_row.pack_forget()
@@ -1372,8 +1372,11 @@ class DictatorApp(ctk.CTk):
 
         # Пресет транскрибации файла (📁): Встреча/Интервью задают каналы,
         # клинап и саммари в один клик; Ручной — настройки с формы.
+        def _on_preset_change():
+            self._update_indicators()
+            self._on_cleanup_change()   # показать/скрыть строку модели под пресет
         _row(card, "Пресет", self.preset_var, PRESET_ORDER,
-             cmd=self._update_indicators, pady=(0, 10), color="#F59E0B")
+             cmd=_on_preset_change, pady=(0, 10), color="#F59E0B")
 
     def _build_history_tab(self, parent):
         top = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1883,14 +1886,19 @@ class DictatorApp(ctk.CTk):
             self._preload_model()
 
 
+    def _preset_uses_llm(self):
+        cfg = PRESETS.get(self.preset_var.get()) if hasattr(self, 'preset_var') else None
+        return bool(cfg and (cfg.get("cleanup") or cfg.get("summary")))
+
     def _on_cleanup_change(self):
         if not hasattr(self, '_cleanup_model_row'):
             return
-        if self.cleanup_var.get() == "Off":
-            self._cleanup_model_row.pack_forget()
-        else:
+        # строка модели нужна и для живого клинапа, и для пресетов с LLM
+        if self.cleanup_var.get() != "Off" or self._preset_uses_llm():
             self._cleanup_model_row.pack(fill="x", pady=(4, 0),
                                          after=self._cleanup_row)
+        else:
+            self._cleanup_model_row.pack_forget()
 
     def _on_translate_change(self):
         if hasattr(self, '_translate_model_row'):
