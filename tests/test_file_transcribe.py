@@ -183,3 +183,15 @@ def test_transcribe_file_calls_on_decoded_with_durations(tmp_path):
                        on_decoded=on_decoded)
     assert len(seen["durs"]) == 2
     assert seen["durs"][0] == pytest.approx(2.0, abs=0.05)
+
+
+def test_unique_output_path_ext_and_suffix(tmp_path):
+    src = str(tmp_path / "call.mp3")
+    assert ft.unique_output_path(src, "md").endswith("call.md")
+    assert ft.unique_output_path(src, "md", ".summary").endswith("call.summary.md")
+
+
+def test_unique_output_path_collision(tmp_path):
+    src = str(tmp_path / "call.mp3")
+    (tmp_path / "call.md").write_text("x")
+    assert ft.unique_output_path(src, "md").endswith("call (2).md")

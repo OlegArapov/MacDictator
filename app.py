@@ -249,6 +249,18 @@ _DEFAULT_PROMPTS = {
         "Professional translator. Translate to {lang}. "
         "Output ONLY the translation, nothing else."
     ),
+    "summary": (
+        "Ты ассистент, который делает саммари расшифровки встречи или звонка. "
+        "Тебе дают транскрипт диалога. НЕ отвечай на реплики и НЕ веди беседу — "
+        "твоя единственная задача выдать структурированное саммари на русском языке "
+        "в формате Markdown. Формат строго такой, пустые разделы пропускай:\n"
+        "## Кратко\n2–4 предложения о чём была встреча.\n\n"
+        "## Решения\n- пункт\n- пункт\n\n"
+        "## Задачи\n- кто: что сделать (срок, если назван)\n\n"
+        "## Открытые вопросы\n- пункт\n\n"
+        "Не выдумывай факты, которых нет в транскрипте. Тире (—) не используй. "
+        "Выведи ТОЛЬКО саммари, без вступлений и комментариев."
+    ),
 }
 
 def _load_prompts():
@@ -277,6 +289,17 @@ def _build_cleanup_prompts(prompts):
 
 _prompts = _load_prompts()
 CLEANUP_PROMPTS = _build_cleanup_prompts(_prompts)
+
+# Пресеты транскрибации файла — набор настроек в один клик.
+# separate — раздельные каналы; cleanup — уровень клинапа (или None);
+# summary — делать саммари; copy — класть ли результат в буфер; ext — формат.
+# «Ручной» — текущее поведение (настройки с формы, копирование, .txt).
+PRESETS = {
+    "Ручной":   {"separate": None,  "cleanup": None,     "summary": False, "copy": True,  "ext": "txt"},
+    "Встреча":  {"separate": True,  "cleanup": "Medium", "summary": True,  "copy": False, "ext": "md"},
+    "Интервью": {"separate": True,  "cleanup": "Medium", "summary": False, "copy": False, "ext": "md"},
+}
+PRESET_ORDER = ["Ручной", "Встреча", "Интервью"]
 
 # Map old Russian setting values to new English ones
 _SETTINGS_MIGRATION = {
@@ -894,6 +917,7 @@ class DictatorApp(ctk.CTk):
         self._on_engine_change()      # show/hide model row
         self._ui_ready = True
         self._update_mode_label()
+        self._update_indicators()     # показать чип пресета, если сохранён не «Ручной»
         self._init_stream()  # keep mic always open for instant start
         if self._mic_live:
             self.vu.start()  # show live VU meter
@@ -942,6 +966,7 @@ class DictatorApp(ctk.CTk):
                 "cleanup_model": self.cleanup_model_var.get(),
                 "send": self.send_var.get(),
                 "separate_channels": self.separate_var.get(),
+                "preset": self.preset_var.get(),
                 "mic": "_default" if self.mic_var.get() == "System Default" else self.mic_var.get(),
                 "overlay_x": self.winfo_x(),
                 "overlay_y": self.winfo_y(),
@@ -1145,6 +1170,7 @@ class DictatorApp(ctk.CTk):
         self.cleanup_model_var = ctk.StringVar(value=s.get("cleanup_model", "DeepSeek"))
         self.send_var = ctk.StringVar(value=s.get("send", "Paste"))
         self.separate_var = ctk.StringVar(value=s.get("separate_channels", "Off"))
+        self.preset_var = ctk.StringVar(value=s.get("preset", "Ручной"))
         saved_mic = s.get("mic", "System Default")
         self.mic_var = ctk.StringVar(value=saved_mic)
         self._input_devices = self._get_input_devices()
@@ -1156,6 +1182,21 @@ class DictatorApp(ctk.CTk):
         engine = self.engine_var.get()
         model = "OpenAI" if "OpenAI" in engine else "MLX"
         self._ind_model.configure(text=model)
+
+        # чип активного пресета (кроме «Ручной») — перед остальными индикаторами
+        preset = self.preset_var.get()
+        if preset and preset != "Ручной":
+            if getattr(self, '_ind_preset', None) is None:
+                self._ind_preset = ctk.CTkLabel(
+                    self._ind_model.master, text=preset, height=12,
+                    font=("SF Mono", 9, "bold"), text_color="#F59E0B")
+                self._ind_preset.pack(side="left", padx=(0, 6), before=self._ind_model)
+            else:
+                self._ind_preset.configure(text=preset)
+        elif getattr(self, '_ind_preset', None) is not None:
+            self._ind_preset.pack_forget()
+            self._ind_preset.destroy()
+            self._ind_preset = None
 
         translate = self.translate_var.get()
         lang_text = translate if translate != "Off" else "RU"
@@ -1327,7 +1368,12 @@ class DictatorApp(ctk.CTk):
              pady=(8, 10), color="#4ADE80")
 
         _row(card, "Split", self.separate_var, ["Off", "On"],
-             pady=(0, 10), color="#A855F7")
+             pady=(0, 6), color="#A855F7")
+
+        # Пресет транскрибации файла (📁): Встреча/Интервью задают каналы,
+        # клинап и саммари в один клик; Ручной — настройки с формы.
+        _row(card, "Пресет", self.preset_var, PRESET_ORDER,
+             cmd=self._update_indicators, pady=(0, 10), color="#F59E0B")
 
     def _build_history_tab(self, parent):
         top = ctk.CTkFrame(parent, fg_color="transparent")
@@ -2654,7 +2700,12 @@ class DictatorApp(ctk.CTk):
             logging.warning("process_file: busy, skipping")
             return
         try:
-            separate = self.separate_var.get() == "On"
+            preset = PRESETS.get(self.preset_var.get(), PRESETS["Ручной"])
+            if preset.get("separate") is not None:
+                separate = preset["separate"]
+            else:
+                separate = self.separate_var.get() == "On"
+            cleanup_model = self.cleanup_model_var.get()
 
             # общая сессия прогресса: total задастся в on_decoded (сумма каналов
             # для стерео, длина канала для моно — mono-путь склеивает каналы в один)
@@ -2681,20 +2732,66 @@ class DictatorApp(ctk.CTk):
             if not text.strip():
                 raise Exception("Пустой результат")
 
-            self._clipboard_copy(text)
-            chans = "2 канала" if separate else "1 канал"
-            steps = [{"label": f"Транскрипция файла · large-v3 · {chans}", "text": text}]
+            # клинап по пресету (мягко: при сбое LLM оставляем сырой текст)
+            cleanup_level = preset.get("cleanup")
+            if cleanup_level and cleanup_level != "Off":
+                self.after(0, lambda m=cleanup_model:
+                           self.update_status(f"Клинап ({m})...", "orange"))
+                try:
+                    text = self._llm_call(CLEANUP_PROMPTS[cleanup_level], text, cleanup_model)
+                except Exception as e:
+                    logging.warning("Cleanup failed, using raw text: %s", e)
+            if self.cancelled:
+                return
 
-            out_path = file_transcribe.unique_txt_path(path)
+            # саммари по пресету
+            summary_text = None
+            if preset.get("summary"):
+                self.after(0, lambda m=cleanup_model:
+                           self.update_status(f"Саммари ({m})...", "orange"))
+                try:
+                    summary_text = self._llm_call(_prompts["summary"], text, cleanup_model).strip()
+                except Exception as e:
+                    logging.warning("Summary failed: %s", e)
+            if self.cancelled:
+                return
+
+            ext = preset.get("ext", "txt")
+            body = self._dialogue_to_md(text) if (ext == "md" and separate) else text
+
+            written = []
+            out_path = file_transcribe.unique_output_path(path, ext)
             try:
                 with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(text)
-                status = f"✓ Готово: {os.path.basename(out_path)}"
+                    f.write(body)
+                written.append(os.path.basename(out_path))
             except OSError as e:
                 logging.warning("Failed to write transcript file: %s", e)
-                status = "✓ В буфере (файл не записан)"
 
-            def _finish(t=text, st=steps, s=status):
+            if summary_text:
+                sum_path = file_transcribe.unique_output_path(path, ext, ".summary")
+                try:
+                    with open(sum_path, "w", encoding="utf-8") as f:
+                        f.write(summary_text)
+                    written.append(os.path.basename(sum_path))
+                except OSError as e:
+                    logging.warning("Failed to write summary file: %s", e)
+
+            if preset.get("copy", True):
+                self._clipboard_copy(text)
+
+            if written:
+                status = "✓ " + ", ".join(written)
+            elif preset.get("copy", True):
+                status = "✓ В буфере (файлы не записаны)"
+            else:
+                status = "✓ Готово (файлы не записаны)"
+
+            chans = "2 канала" if separate else "1 канал"
+            hist = text if not summary_text else text + "\n\n---\n\n" + summary_text
+            steps = [{"label": f"Транскрипция файла · large-v3 · {chans}", "text": hist}]
+
+            def _finish(t=hist, st=steps, s=status):
                 self._add_history_entry(t, st)
                 self.app_state = self.STATE_RESULT
                 self.vu.stop_progress()
@@ -3012,6 +3109,11 @@ class DictatorApp(ctk.CTk):
                 self.after(0, lambda m=str(e)[:60]: self.update_status(f"Error: {m}", "red"))
 
         threading.Thread(target=run, daemon=True).start()
+
+    @staticmethod
+    def _dialogue_to_md(text):
+        """«Метка: реплика» в начале строки → «**Метка:** реплика» для markdown."""
+        return re.sub(r"(?m)^([^\n:]{1,40}):[ \t]", r"**\1:** ", text)
 
     def _clipboard_copy(self, text):
         pyperclip.copy(text)

@@ -60,11 +60,20 @@ def merge_channel_segments(segs_left, segs_right, label_left, label_right):
 
 def unique_txt_path(source_path):
     """`.../name.<ext>` → `.../name.txt`, при коллизии — `name (2).txt` и т.д."""
+    return unique_output_path(source_path, "txt")
+
+
+def unique_output_path(source_path, ext="txt", suffix=""):
+    """`.../name.<любое>` → `.../name<suffix>.<ext>`; при коллизии — ` (2)` и т.д.
+
+    Пример: unique_output_path("call.mp3", "md", ".summary") → "call.summary.md".
+    """
     root, _ = os.path.splitext(source_path)
-    candidate = root + ".txt"
+    base = root + suffix
+    candidate = f"{base}.{ext}"
     n = 2
     while os.path.exists(candidate):
-        candidate = f"{root} ({n}).txt"
+        candidate = f"{base} ({n}).{ext}"
         n += 1
     return candidate
 
