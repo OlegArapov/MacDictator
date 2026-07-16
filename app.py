@@ -778,13 +778,13 @@ class DictatorApp(ctk.CTk):
         self._settings = self._load_settings()
 
         self.title("MacDictator")
-        self.configure(fg_color=C["bg"])
+        self.configure(fg_color=C["card"])
         self.resizable(False, False)
 
         # Position: bottom-center, restore saved position if any
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
-        pw, ph = 360, 70
+        pw, ph = 392, 72
         default_x = (sw - pw) // 2
         default_y = sh - ph - 80            # ~80px above Dock
         ox = self._settings.get("overlay_x", default_x)
@@ -931,8 +931,8 @@ class DictatorApp(ctk.CTk):
         """Build compact pill UI."""
         # Outer pill frame — rounded, draggable
         pill = ctk.CTkFrame(self, fg_color=C["card"], corner_radius=0,
-                            border_width=2, border_color=C["border"])
-        pill.pack(fill="both", expand=True, padx=3, pady=3)
+                            border_width=1, border_color=C["border"])
+        pill.pack(fill="both", expand=True, padx=0, pady=0)
         self._pill = pill  # keep reference for border color changes
 
         # Bind drag to pill and all its children
@@ -958,7 +958,7 @@ class DictatorApp(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             info_col, text="Ready", height=14,
-            font=("SF Pro Text", 10), text_color=C["text3"], anchor="w")
+            font=("SF Pro Text", 11, "bold"), text_color=C["text2"], anchor="w")
         self.status_label.pack(anchor="w")
 
         # mic name — resolve active mic
@@ -973,13 +973,13 @@ class DictatorApp(ctk.CTk):
 
         self._mic_name_label = ctk.CTkLabel(
             info_col, text=_mic_short, height=11,
-            font=("SF Pro Text", 8), text_color=C["text3"], anchor="w")
+            font=("SF Pro Text", 8), text_color=C["text2"], anchor="w")
         self._mic_name_label.pack(anchor="w")
 
         # hotkey hint (⌘R) — shown in idle state
         self._hotkey_label = ctk.CTkLabel(
             info_col, text="⌘R", height=10,
-            font=("SF Mono", 8), text_color=C["text3"], anchor="w")
+            font=("SF Mono", 8, "bold"), text_color=C["accent"], anchor="w")
         self._hotkey_label.pack(anchor="w")
 
         # Center column: indicators + VU meter
@@ -1036,7 +1036,7 @@ class DictatorApp(ctk.CTk):
 
         # Right side: hide / [gear + open-file] / LIVE
         right = ctk.CTkFrame(inner, fg_color="transparent")
-        right.pack(side="right", padx=(0, 2))
+        right.pack(side="right", padx=(0, 8))
 
         # Hide button (Ctrl+Shift+H restores)
         self._hide_btn = ctk.CTkButton(
@@ -1052,15 +1052,15 @@ class DictatorApp(ctk.CTk):
         actions_row.pack(pady=(0, 2))
 
         self.file_btn = ctk.CTkButton(
-            actions_row, text="📁", width=24, height=20,
+            actions_row, text="📁", width=22, height=20,
             font=("SF Pro Text", 13), corner_radius=4,
             fg_color="transparent", text_color=C["text2"],
             hover_color=C["hover"],
             command=self._pick_file)
-        self.file_btn.pack(side="left", padx=(0, 3))
+        self.file_btn.pack(side="left", padx=(0, 2))
 
         self._gear_btn = ctk.CTkButton(
-            actions_row, text="⚙", width=26, height=20,
+            actions_row, text="⚙", width=24, height=20,
             font=("SF Pro Text", 16), corner_radius=4,
             fg_color="transparent", text_color=C["text"],
             hover_color=C["hover"],
@@ -1070,12 +1070,12 @@ class DictatorApp(ctk.CTk):
         self._mic_always_on = True
         self._mic_live = True
         self.mic_btn = ctk.CTkButton(
-            right, text="LIVE", width=38, height=18,
-            font=("SF Mono", 8, "bold"), corner_radius=3,
-            fg_color="transparent", text_color=C["green"],
+            actions_row, text="LIVE", width=34, height=20,
+            font=("SF Mono", 8, "bold"), corner_radius=5,
+            fg_color="#14351F", text_color=C["green"],
             hover_color=C["hover"],
             command=self._toggle_mic_mode)
-        self.mic_btn.pack()
+        self.mic_btn.pack(side="left", padx=(3, 0))
 
         # Start VU meter
 
@@ -1824,7 +1824,7 @@ class DictatorApp(ctk.CTk):
     # --- status ---
     def update_status(self, msg, color="gray"):
         colors = {
-            "gray": C["text3"], "red": C["red"], "green": C["green"],
+            "gray": C["text2"], "red": C["red"], "green": C["green"],
             "blue": C["accent"], "orange": C["orange"],
         }
         self.status_label.configure(
