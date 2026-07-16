@@ -307,19 +307,41 @@ C = {
 
 # Типичные галлюцинации Whisper на тишине/шуме (YouTube-хвосты, титры и т.п.).
 # Применяются и к склеенному тексту, и к отдельным сегментам (файл + split).
-_HALLUCINATION_PHRASES = [
-    "продолжение следует", "субтитры", "редактор субтитров", "корректор",
-    "субтитры создавал", "субтитры делал", "субтитры сделал",
-    "подписывайтесь", "ставьте лайк", "thank you", "thanks for watching",
-    "subscribe", "like and subscribe", "смотрите в следующей серии",
-    "конец фильма", "музыка", "продолжение в следующей",
+# Сильные фразы почти никогда не встречаются в живой речи — матчим как подстроку.
+_HALLUCINATION_STRONG = [
+    "продолжение следует", "продолжение в следующей", "субтитры создавал",
+    "субтитры делал", "субтитры сделал", "редактор субтитров",
+    "смотрите в следующей серии", "конец фильма", "ставьте лайк",
+    "подписывайтесь", "спасибо за просмотр", "thanks for watching",
+    "thank you for watching", "like and subscribe",
+]
+# Слабые слова встречаются в нормальной речи («мне нравится эта музыка»,
+# «поправь субтитры»), поэтому фильтруем, только если словом исчерпан весь
+# сегмент — Whisper выдаёт такое на музыке/тишине отдельной «фразой».
+_HALLUCINATION_WEAK = [
+    "субтитры", "музыка", "корректор", "subscribe", "thank you", "thanks",
 ]
 
 
 def _is_hallucination_phrase(text):
-    """Короткий сегмент целиком/почти целиком = известная галлюцинация Whisper."""
-    t = text.lower().strip()
-    return len(text) < 80 and any(p in t for p in _HALLUCINATION_PHRASES)
+    """True, если сегмент — известная галлюцинация Whisper, а не реальная речь.
+
+    Сильная фраза как подстрока → галлюцинация. Слабое слово → только если им
+    (с повторами) исчерпан весь сегмент. Нормализуем пунктуацию/регистр.
+    """
+    if len(text) >= 80:
+        return False
+    core = re.sub(r"[^0-9a-zа-яё\s]", " ", text.lower())
+    core = re.sub(r"\s+", " ", core).strip()
+    if not core:
+        return False
+    if any(p in core for p in _HALLUCINATION_STRONG):
+        return True
+    for w in _HALLUCINATION_WEAK:
+        remainder = re.sub(r"\s+", " ", core.replace(w, " ")).strip()
+        if remainder == "" and core != remainder:
+            return True
+    return False
 
 
 class VUMeter(ctk.CTkCanvas):
@@ -460,6 +482,7 @@ class RecordingBubble(ctk.CTkToplevel):
         self._active = False
         self._mode = "recording"
         self._progress_line = ""
+        self._tick_job = None
 
         self._sw = self.winfo_screenwidth()
         # Start off-screen (no withdraw — avoids activation on show)
@@ -483,14 +506,24 @@ class RecordingBubble(ctk.CTkToplevel):
             pass
 
     def show_at(self, x, y):
+        self._stop_tick()          # не плодить параллельные tick-циклы
         self._start_time = time.time()
         self._active = True
         self._smooth = 0.0
+        self._progress_line = ""   # не показывать процент прошлой сессии
         self.geometry(f"{self._BW}x{self._BH}+{x}+{y}")
         self.lift()
         # Must set all-spaces every show — macOS ignores it for off-screen windows
         self.after(10, lambda: self._set_all_spaces_for(self))
         self._tick()
+
+    def _stop_tick(self):
+        if self._tick_job is not None:
+            try:
+                self.after_cancel(self._tick_job)
+            except Exception:
+                pass
+            self._tick_job = None
 
     def show(self):
         # Move on-screen (no deiconify — no app activation / space switch)
@@ -504,8 +537,15 @@ class RecordingBubble(ctk.CTkToplevel):
 
     def hide(self):
         self._active = False
+        self._stop_tick()
         # Move off-screen (no withdraw — stays on all spaces)
         self.geometry(f"+{-9999}+{-9999}")
+
+    def destroy(self):
+        # погасить активный tick, чтобы висящий after не стрелял по удалённому окну
+        self._active = False
+        self._stop_tick()
+        super().destroy()
 
     def set_volume(self, v):
         self._volume = min(1.0, v)
@@ -515,7 +555,7 @@ class RecordingBubble(ctk.CTkToplevel):
             return
         if self._mode == "transcribing":
             self._draw_transcribing()
-            self.after(80, self._tick)
+            self._tick_job = self.after(80, self._tick)
             return
         self._smooth += (self._volume - self._smooth) * 0.4
 
@@ -557,7 +597,7 @@ class RecordingBubble(ctk.CTkToplevel):
         c.create_text(w - 10, mid, text=f"{em}:{es:02d}",
                       font=("SF Mono", 9, "bold"), fill="#C8C8D4", anchor="e")
 
-        self.after(50, self._tick)
+        self._tick_job = self.after(50, self._tick)
 
     def _draw_transcribing(self):
         c = self._canvas
@@ -600,6 +640,8 @@ class RecordingBubble(ctk.CTkToplevel):
                 ('objc_msgSend', lib))
             send_set_level = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(
                 ('objc_msgSend', lib))
+            send_style = ctypes.CFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p)(
+                ('objc_msgSend', lib))
 
             app = send(lib.objc_getClass(b'NSApplication'),
                        lib.sel_registerName(b'sharedApplication'))
@@ -608,12 +650,18 @@ class RecordingBubble(ctk.CTkToplevel):
             sel_at = lib.sel_registerName(b'objectAtIndex:')
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
             sel_set_level = lib.sel_registerName(b'setLevel:')
+            sel_style = lib.sel_registerName(b'styleMask')
             behavior = (1 << 0) | (1 << 4)
             NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
+            NS_TITLED = 1 << 0           # NSWindowStyleMaskTitled
             for i in range(count):
                 w = send_idx(windows, sel_at, i)
                 send_set(w, sel_set, behavior)
-                send_set_level(w, sel_set_level, NS_STATUS_WINDOW_LEVEL)
+                # уровень поднимаем только у безрамочных оверлеев (пилюля, баблы);
+                # диалоги Settings/Keys титульные — их не трогаем, иначе повиснут
+                # поверх fullscreen-приложений на всех Spaces
+                if not (send_style(w, sel_style) & NS_TITLED):
+                    send_set_level(w, sel_set_level, NS_STATUS_WINDOW_LEVEL)
         except Exception:
             pass
 
@@ -1587,6 +1635,8 @@ class DictatorApp(ctk.CTk):
                 ('objc_msgSend', lib))
             send_set_level = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(
                 ('objc_msgSend', lib))
+            send_style = ctypes.CFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p)(
+                ('objc_msgSend', lib))
 
             app = send(lib.objc_getClass(b'NSApplication'),
                        lib.sel_registerName(b'sharedApplication'))
@@ -1595,13 +1645,17 @@ class DictatorApp(ctk.CTk):
             sel_at = lib.sel_registerName(b'objectAtIndex:')
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
             sel_set_level = lib.sel_registerName(b'setLevel:')
+            sel_style = lib.sel_registerName(b'styleMask')
             # canJoinAllSpaces (1<<0) | stationary (1<<4)
             behavior = (1 << 0) | (1 << 4)
             NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
+            NS_TITLED = 1 << 0           # NSWindowStyleMaskTitled
             for i in range(count):
                 win = send_idx(windows, sel_at, i)
                 send_set(win, sel_set, behavior)
-                send_set_level(win, sel_set_level, NS_STATUS_WINDOW_LEVEL)
+                # уровень — только безрамочным оверлеям, не титульным диалогам
+                if not (send_style(win, sel_style) & NS_TITLED):
+                    send_set_level(win, sel_set_level, NS_STATUS_WINDOW_LEVEL)
         except Exception as e:
             logging.warning("Failed to set all-spaces: %s", e)
 
@@ -2022,11 +2076,15 @@ class DictatorApp(ctk.CTk):
         threading.Thread(target=_run_listener, daemon=True).start()
 
     def toggle_recording(self):
-        if self.app_state == self.STATE_IDLE:
-            self.start_recording()
-        elif self.app_state == self.STATE_RECORDING:
+        if self.app_state == self.STATE_RECORDING:
             self.stop_and_process()
-        elif self.app_state == self.STATE_RESULT:
+            return
+        # запись из IDLE/RESULT, но не пока идёт транскрибация файла: иначе
+        # start_recording сбросит self.cancelled и файловый поток «оживёт»
+        if self._processing_lock.locked():
+            self.update_status("Занято, дождись окончания", "orange")
+            return
+        if self.app_state in (self.STATE_IDLE, self.STATE_RESULT):
             self.start_recording()
 
     def _beep(self, count=1):
@@ -2183,7 +2241,7 @@ class DictatorApp(ctk.CTk):
         self._pill.configure(border_color=C["orange"])
         self._progress = None            # новая сессия создастся в цикле
         self.vu.start_progress()
-        self.update_status("Транскрибация 0%", "orange")
+        self.update_status("Транскрибация…", "orange")
         # Lower window so user can click on target app
         threading.Thread(target=self.process_audio, daemon=True).start()
 
@@ -2312,9 +2370,6 @@ class DictatorApp(ctk.CTk):
         for ci, chunk in enumerate(chunks):
             if self.cancelled:
                 break
-            if len(chunks) > 1:
-                self.after(0, lambda p=prog, n=ci: self._apply_progress(p, n))
-
             chunk_arr = np.asarray(chunk, dtype=np.float32).reshape(-1)
             chunk_dur = len(chunk_arr) / self.samplerate
             timeout_sec = max(120, int(chunk_dur * 10))
@@ -2339,6 +2394,8 @@ class DictatorApp(ctk.CTk):
             offset_sec = offset_samples / self.samplerate
             offset_samples += len(chunk_arr)
             prog.done_sec += chunk_durs[ci]
+            # прогресс после каждого чанка (в т.ч. одиночного) → доходит до 100%
+            self.after(0, lambda p=prog, n=ci + 1: self._apply_progress(p, n))
             if _result_box[0] is None:
                 continue
             segments = _result_box[0].get('segments', [])
@@ -2383,12 +2440,9 @@ class DictatorApp(ctk.CTk):
 
     def _clean_hallucination(self, text):
         """Detect and trim Whisper hallucination patterns. Returns clean text or raises."""
-        text_lower = text.lower().strip()
-
-        # Short text entirely matching a known hallucination phrase
-        for phrase in _HALLUCINATION_PHRASES:
-            if phrase in text_lower and len(text) < 80:
-                raise Exception("Whisper hallucination — speak louder or check mic")
+        # Short text that is a known hallucination phrase
+        if _is_hallucination_phrase(text):
+            raise Exception("Whisper hallucination — speak louder or check mic")
 
         # CJK hallucination
         cjk_chars = len(re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]', text))
@@ -2418,7 +2472,7 @@ class DictatorApp(ctk.CTk):
                         cut_word_idx = i
                         clean_text = ' '.join(words[:cut_word_idx]).strip()
                         # Remove trailing hallucination phrase fragments
-                        for phrase in _HALLUCINATION_PHRASES:
+                        for phrase in _HALLUCINATION_STRONG + _HALLUCINATION_WEAK:
                             if clean_text.lower().endswith(phrase):
                                 clean_text = clean_text[:-(len(phrase))].strip()
                         logging.warning("Hallucination trimmed at word %d/%d, pattern=%r×%d",
@@ -2457,10 +2511,6 @@ class DictatorApp(ctk.CTk):
             if rms < 0.003:
                 raise Exception("Too quiet — speak louder or check mic")
             sf.write(filename, audio_concat, self.samplerate)
-
-            dm, ds = divmod(int(duration), 60)
-            self.after(0, lambda: self.update_status(
-                f"Whisper {dm:02d}:{ds:02d}...", "orange"))
 
             engine = self.engine_var.get()
             model_name = self.model_var.get()
@@ -2647,6 +2697,8 @@ class DictatorApp(ctk.CTk):
             def _finish(t=text, st=steps, s=status):
                 self._add_history_entry(t, st)
                 self.app_state = self.STATE_RESULT
+                self.vu.stop_progress()
+                self._rec_bubble.hide()   # файл готов — убрать спиннер с мониторов
                 self.update_status(s, "green")
 
             self.after(0, _finish)
@@ -2671,6 +2723,7 @@ class DictatorApp(ctk.CTk):
     def _on_result(self, text, steps=None):
         self.app_state = self.STATE_RESULT
         self.vu.stop_progress()
+        self._rec_bubble.hide()   # результат готов — не крутить спиннер на мониторах
         self._add_history_entry(text, steps)
         # Show preview in pill
         self._rec_indicator.configure(text="✓", text_color=C["green"])
