@@ -166,6 +166,30 @@ MLX_MODEL_APPROX_MB = 3072  # large-v3 is ~3 GB
 _mlx_lock = threading.Lock()  # prevents concurrent model loads
 
 
+def _mlx_limit_memory():
+    """Ограничить кэш Metal-буферов MLX.
+
+    Без лимита MLX складывает освобождённые GPU-буферы в кэш бесконечно:
+    при почанковой транскрибации файла кэш вырастает до ~13 ГБ IOAccelerator
+    (веса large-v3 — всего ~3 ГБ) и системе не возвращается — на unified
+    memory машина уходит в своп.
+    """
+    try:
+        import mlx.core as mx
+        mx.set_cache_limit(1024 ** 3)  # 1 ГБ на переиспользование буферов
+    except Exception as e:
+        logging.warning("MLX cache limit not applied: %s", e)
+
+
+def _mlx_clear_cache():
+    """Вернуть системе кэш Metal-буферов, накопленный за проход."""
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+    except Exception:
+        pass
+
+
 def _hf_cache_dir(repo):
     return os.path.expanduser(
         f"~/.cache/huggingface/hub/models--{repo.replace('/', '--')}"
@@ -2183,6 +2207,7 @@ class DictatorApp(ctk.CTk):
                     ModelHolder.model = None
                     ModelHolder.model_path = None
                     gc.collect()
+                _mlx_limit_memory()
                 ModelHolder.get_model(repo, mx.float16)
                 self.after(0, lambda: self.update_status("Ready", "green"))
             except Exception:
@@ -2395,6 +2420,8 @@ class DictatorApp(ctk.CTk):
             raise Exception(f"Unknown model: {self.model_var.get()}")
         if not _mlx_model_downloaded(repo):
             raise Exception("Model not downloaded. Open Setup → Download model")
+        # и здесь, не только в preload: движок могли переключить без preload
+        _mlx_limit_memory()
 
         _prompt = "This is English speech." if lang == "en" else "Это русская речь."
         _whisper_kwargs = dict(
@@ -2442,6 +2469,7 @@ class DictatorApp(ctk.CTk):
             t = threading.Thread(target=_do_transcribe, daemon=True)
             t.start()
             t.join(timeout=timeout_sec)
+            _mlx_clear_cache()
             if t.is_alive():
                 raise Exception(f"Transcription timed out on chunk {ci+1}")
             if _result_box[1]:
