@@ -42,11 +42,24 @@ cp -R "$TCLTK_LIB/tk9.0"  "$APP/Contents/Resources/lib/tk9.0"
 # Homebrew раздаёт файлы read-only — снимаем, чтобы codesign/очистка не спотыкались.
 chmod -R u+w "$APP/Contents/Resources/lib/tcl9.0" "$APP/Contents/Resources/lib/tk9.0"
 
+# Подпись стабильной идентити (issue #5): ad-hoc подпись меняет CDHash каждой
+# сборкой, и TCC сбрасывает Accessibility-грант при любом обновлении. С
+# сертификатом «MacDictator Dev» designated requirement стабилен — грант
+# выдаётся один раз. Нет сертификата в keychain — откат на ad-hoc как раньше.
+SIGN_ID="${MACDICTATOR_SIGN_ID:-MacDictator Dev}"
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+    SIGN="$SIGN_ID"
+    echo "=== Signing with identity: $SIGN_ID ==="
+else
+    SIGN="-"
+    echo "=== Signing ad-hoc ($SIGN_ID not found in keychain; грант Accessibility слетит) ==="
+fi
+
 # py2app signs binaries before macholib rewrites install names, which corrupts
 # signatures; on arm64 the kernel then SIGKILLs the app (Code Signature Invalid).
 # Re-sign every Mach-O bottom-up, then the bundle itself.
-echo "=== Re-signing bundle (ad-hoc) ==="
-find "$APP" -type f \( -name "*.so" -o -name "*.dylib" \) -exec codesign --force --sign - {} \; 2>/dev/null
+echo "=== Re-signing bundle ==="
+find "$APP" -type f \( -name "*.so" -o -name "*.dylib" \) -exec codesign --force --sign "$SIGN" {} \; 2>/dev/null
 
 # Some Homebrew dylibs (liblzma) get mangled beyond what codesign can replace.
 # Re-copy the original and rewrite its install id, then sign.
@@ -62,17 +75,17 @@ for f in "$APP/Contents/Frameworks/"*.dylib; do
     cp -f "$src" "$f"
     chmod u+w "$f"
     install_name_tool -id "@executable_path/../Frameworks/$name" "$f" 2>/dev/null
-    codesign --force --sign - "$f"
+    codesign --force --sign "$SIGN" "$f"
     codesign --verify "$f" || { echo "ERROR: $name still invalid" >&2; exit 1; }
 done
 for bin in "$APP/Contents/Resources/lib/python3.12/torch/bin/"*; do
-    [ -f "$bin" ] && codesign --force --sign - "$bin" 2>/dev/null
+    [ -f "$bin" ] && codesign --force --sign "$SIGN" "$bin" 2>/dev/null
 done
-codesign --force --sign - "$APP/Contents/Frameworks/Python.framework/Versions/3.12/Python" 2>/dev/null
-codesign --force --sign - "$APP/Contents/Frameworks/Python.framework/Versions/3.12" 2>/dev/null
-codesign --force --sign - "$APP/Contents/MacOS/python"
-codesign --force --sign - "$APP/Contents/MacOS/MacDictator"
-codesign --force --sign - "$APP"
+codesign --force --sign "$SIGN" "$APP/Contents/Frameworks/Python.framework/Versions/3.12/Python" 2>/dev/null
+codesign --force --sign "$SIGN" "$APP/Contents/Frameworks/Python.framework/Versions/3.12" 2>/dev/null
+codesign --force --sign "$SIGN" "$APP/Contents/MacOS/python"
+codesign --force --sign "$SIGN" "$APP/Contents/MacOS/MacDictator"
+codesign --force --sign "$SIGN" "$APP"
 
 echo "=== Verifying signature ==="
 codesign --verify --deep --strict "$APP"
