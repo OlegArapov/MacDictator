@@ -1702,8 +1702,15 @@ class DictatorApp(ctk.CTk):
             return
         self.deiconify()
         self.attributes('-topmost', True)
-        self.after(100, self._set_all_spaces)
+        self.after(100, self._set_all_spaces_loop)
         self.after(200, self._setup_tray)
+
+    def _set_all_spaces_loop(self):
+        # Tk сбрасывает collectionBehavior после старта (ремап окна) — разовая
+        # установка теряла fullScreenAuxiliary, и пилюля пропадала на
+        # fullscreen-спейсах. Переприменяем постоянно, вызовы копеечные.
+        self._set_all_spaces()
+        self.after(3000, self._set_all_spaces_loop)
 
     def _set_all_spaces(self):
         """Make window visible on all macOS desktops/spaces via ctypes (no pyobjc)."""
