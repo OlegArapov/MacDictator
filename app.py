@@ -148,7 +148,7 @@ def _make_clients(keys):
 _api_keys = _load_keys()
 openai_client, deepseek_client = _make_clients(_api_keys)
 
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 MAX_RECORD_SEC = 300
 LOCK_FILE = os.path.join(_DATA_DIR, ".macdictator.lock")
 HISTORY_FILE = os.path.join(_DATA_DIR, "history.json")
