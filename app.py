@@ -159,9 +159,14 @@ DEFAULTS = {"engine": "MLX", "model": "large-v3", "translate": "Off", "translate
 
 MLX_MODELS = {
     "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "turbo": "mlx-community/whisper-large-v3-turbo",
 }
 
-MLX_MODEL_APPROX_MB = 3072  # large-v3 is ~3 GB
+# приблизительный размер снапшота по repo — для проверки скачанности и прогресса
+MLX_MODEL_MB = {
+    "mlx-community/whisper-large-v3-mlx": 3072,
+    "mlx-community/whisper-large-v3-turbo": 1500,
+}
 
 _mlx_lock = threading.Lock()  # prevents concurrent model loads
 
@@ -215,7 +220,7 @@ def _mlx_model_downloaded(repo):
                     total += os.path.getsize(os.path.join(root, f))
                 except OSError:
                     pass
-        return total >= MLX_MODEL_APPROX_MB * 0.9 * 1024 * 1024
+        return total >= MLX_MODEL_MB.get(repo, 3072) * 0.9 * 1024 * 1024
     except Exception:
         return False
 
@@ -327,7 +332,7 @@ PRESET_ORDER = ["Ручной", "Встреча", "Интервью"]
 
 # Map old Russian setting values to new English ones
 _SETTINGS_MIGRATION = {
-    "model": {"base": "large-v3", "turbo": "large-v3"},
+    "model": {"base": "large-v3"},
     "cleanup": {"Нет": "Off", "Лайт": "Lite", "Средне": "Medium", "Макс": "Max"},
     "translate": {"Whisper": "→EN", "DeepSeek": "→EN", "ChatGPT": "→EN"},
     "send": {"Нет": "Off", "Да": "Paste", "Вставка": "Paste"},
@@ -1187,7 +1192,9 @@ class DictatorApp(ctk.CTk):
     def _init_setting_vars(self):
         s = self._settings
         self.engine_var = ctk.StringVar(value=s.get("engine", "MLX"))
-        self.model_var = ctk.StringVar(value="large-v3")
+        _saved_model = s.get("model", "large-v3")
+        self.model_var = ctk.StringVar(
+            value=_saved_model if _saved_model in MLX_MODELS else "large-v3")
         self.translate_var = ctk.StringVar(value=s.get("translate", "Off"))
         self.translate_model_var = ctk.StringVar(value=s.get("translate_model", "DeepSeek"))
         self.cleanup_var = ctk.StringVar(value=s.get("cleanup", "Off"))
@@ -1335,9 +1342,13 @@ class DictatorApp(ctk.CTk):
         self._mic_menu.pack(side="left", fill="x", expand=True, padx=(0, 12))
         mic_row.pack(fill="x", pady=(10, 8))
 
-        # Engine (MLX = large-v3 local, OpenAI = cloud)
+        # Engine (MLX = локальный Whisper, OpenAI = cloud)
         _row(card, "Engine", self.engine_var, ["MLX", "OpenAI"],
              self._on_engine_change, pady=(0, 4), color="#7C7CFF")
+
+        # Model: large-v3 — качество, turbo — в разы быстрее (декодер 32→4 слоя)
+        _row(card, "Model", self.model_var, list(MLX_MODELS),
+             self._on_model_change, pady=(0, 4), color="#7C7CFF")
 
         ctk.CTkFrame(card, fg_color=C["border_subtle"], height=1).pack(fill="x", padx=16, pady=(4, 8))
 
@@ -1544,7 +1555,8 @@ class DictatorApp(ctk.CTk):
         ctk.CTkLabel(mlx_top, text="MLX Whisper", font=("SF Pro Text", 14, "bold"),
                      text_color=C["text"]).pack(side="left")
 
-        default_repo = MLX_MODELS["large-v3"]
+        default_repo = MLX_MODELS.get(self.model_var.get(), MLX_MODELS["large-v3"])
+        repo_mb = MLX_MODEL_MB.get(default_repo, 3072)
 
         def _mlx_current_status():
             if not mlx_whisper:
@@ -1563,7 +1575,7 @@ class DictatorApp(ctk.CTk):
             mlx_action_frame.pack(fill="x", padx=8, pady=(0, 8))
 
             dl_btn = ctk.CTkButton(mlx_action_frame,
-                                   text=f"Download model (~{MLX_MODEL_APPROX_MB // 1024} GB)",
+                                   text=f"Download model (~{repo_mb / 1024:.1f} GB)",
                                    height=32, fg_color=C["accent"])
             dl_btn.pack(fill="x")
 
@@ -1592,8 +1604,8 @@ class DictatorApp(ctk.CTk):
                             mlx_status_lbl.configure(text="Ready", text_color=C["green"])
                         return
                     mb = _hf_cache_size_mb(default_repo)
-                    pct = min(99, int(mb * 100 / MLX_MODEL_APPROX_MB))
-                    dl_btn.configure(text=f"Downloading... {pct}%  ({mb:.0f} / {MLX_MODEL_APPROX_MB} MB)")
+                    pct = min(99, int(mb * 100 / repo_mb))
+                    dl_btn.configure(text=f"Downloading... {pct}%  ({mb:.0f} / {repo_mb} MB)")
                     dl_btn.after(500, _tick)
 
                 _tick()
@@ -1937,6 +1949,14 @@ class DictatorApp(ctk.CTk):
     def _on_engine_change(self):
         if getattr(self, '_ui_ready', False):
             self._preload_model()
+
+    def _on_model_change(self):
+        if not getattr(self, '_ui_ready', False):
+            return
+        repo = MLX_MODELS.get(self.model_var.get())
+        if repo and mlx_whisper and not _mlx_model_downloaded(repo):
+            self.update_status("Model not downloaded. Open Setup", "orange")
+        self._preload_model()
 
     def _update_resources(self):
         try:
@@ -2827,7 +2847,7 @@ class DictatorApp(ctk.CTk):
 
             chans = "2 канала" if separate else "1 канал"
             hist = text if not summary_text else text + "\n\n---\n\n" + summary_text
-            steps = [{"label": f"Транскрипция файла · large-v3 · {chans}", "text": hist}]
+            steps = [{"label": f"Транскрипция файла · {self.model_var.get()} · {chans}", "text": hist}]
 
             def _finish(t=hist, st=steps, s=status):
                 self._add_history_entry(t, st)
