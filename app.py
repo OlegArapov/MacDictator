@@ -170,6 +170,10 @@ MLX_MODEL_MB = {
 
 _mlx_lock = threading.Lock()  # prevents concurrent model loads
 
+# canJoinAllSpaces (1<<0) | stationary (1<<4) | fullScreenAuxiliary (1<<8) —
+# без последнего оверлеи не видны поверх fullscreen-спейсов (зелёная кнопка)
+NS_COLLECTION_BEHAVIOR_OVERLAY = (1 << 0) | (1 << 4) | (1 << 8)
+
 
 def _mlx_limit_memory():
     """Ограничить кэш Metal-буферов MLX.
@@ -703,7 +707,7 @@ class RecordingBubble(ctk.CTkToplevel):
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
             sel_set_level = lib.sel_registerName(b'setLevel:')
             sel_style = lib.sel_registerName(b'styleMask')
-            behavior = (1 << 0) | (1 << 4)
+            behavior = NS_COLLECTION_BEHAVIOR_OVERLAY
             NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
             NS_TITLED = 1 << 0           # NSWindowStyleMaskTitled
             for i in range(count):
@@ -1732,8 +1736,7 @@ class DictatorApp(ctk.CTk):
             sel_set = lib.sel_registerName(b'setCollectionBehavior:')
             sel_set_level = lib.sel_registerName(b'setLevel:')
             sel_style = lib.sel_registerName(b'styleMask')
-            # canJoinAllSpaces (1<<0) | stationary (1<<4)
-            behavior = (1 << 0) | (1 << 4)
+            behavior = NS_COLLECTION_BEHAVIOR_OVERLAY
             NS_STATUS_WINDOW_LEVEL = 25  # выше обычных и floating-окон — не перекрыть
             NS_TITLED = 1 << 0           # NSWindowStyleMaskTitled
             for i in range(count):
