@@ -88,7 +88,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Установка зависимостей занимает пару минут — `torch`, `mlx` и `numpy` тяжёлые. Запуск: двойной клик по `MacDictator.command` в Finder (скрипт сам проверит venv и доустановит зависимости) либо `venv/bin/python app.py`.
+Установка зависимостей занимает пару минут — `torch`, `mlx` и `numpy` тяжёлые. Запуск: двойной клик по `scripts/MacDictator.command` в Finder (скрипт сам проверит venv и доустановит зависимости) либо `venv/bin/python app.py`.
 
 При запуске из исходников разрешения Input Monitoring и Accessibility выдаются не приложению, а терминалу (Terminal.app или iTerm) — именно он запускает Python.
 
@@ -98,23 +98,27 @@ Venv привязан к абсолютному пути: после перен�
 
 ```bash
 venv/bin/python -m pytest tests/ -q   # 43 теста
-./build.sh                            # dist/MacDictator.app + DMG
+./scripts/build.sh                    # dist/MacDictator.app + DMG в корне
 ```
 
-`build.sh` собирает `.app` через py2app, докладывает в бандл скрипты Tcl/Tk, переподписывает бинарники и упаковывает DMG. Иконка `.icns` генерируется из PNG через `make_icon.py`.
+`build.sh` собирает `.app` через py2app, докладывает в бандл скрипты Tcl/Tk, переподписывает бинарники и упаковывает DMG. Запускать можно из любой папки — скрипт сам переходит в корень проекта. Иконка `assets/MacDictator.icns` лежит в репозитории, перегенерировать из PNG можно через `venv/bin/python assets/make_icon.py`.
 
 Подпись берётся из сертификата `MacDictator Dev` в keychain (переопределяется переменной `MACDICTATOR_SIGN_ID`). Это важно: при ad-hoc подписи CDHash меняется с каждой сборкой, и macOS сбрасывает выданное разрешение Accessibility при каждом обновлении. Со стабильной идентити разрешение выдаётся один раз.
 
 ### Структура
 
-- `app.py` — приложение: UI, запись, распознавание, обработка через LLM
-- `file_transcribe.py` — транскрибация готовых файлов, разделение каналов, пресеты
-- `progress.py` — расчёт процента и ETA
-- `multiscreen.py` — геометрия индикаторов на нескольких мониторах
-- `tray.py` — иконка в менюбаре
-- `prompts.json` — системные промпты для чистки и перевода
-- `setup.py`, `build.sh`, `make_icon.py` — сборка
-- `tests/` — pytest
+```
+app.py            приложение: UI, запись, распознавание, обработка через LLM
+prompts.json      системные промпты для чистки и перевода
+setup.py          конфигурация py2app
+macdictator/      file_transcribe — файлы, каналы, пресеты
+                  progress — процент и ETA
+                  multiscreen — геометрия индикаторов на нескольких мониторах
+                  tray — иконка в менюбаре
+assets/           иконки и генератор make_icon.py
+scripts/          build.sh, MacDictator.command
+tests/            pytest
+```
 
 Настройки и история лежат рядом с `app.py` при запуске из исходников и в `~/Library/Application Support/MacDictator/` в собранном приложении. `keys.json`, `settings.json` и `history.json` в `.gitignore` и в репозиторий не попадают.
 

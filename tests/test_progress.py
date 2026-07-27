@@ -1,5 +1,5 @@
 import pytest
-from progress import format_mmss, ProgressState
+from macdictator.progress import format_mmss, ProgressState
 
 
 def test_format_mmss_basic():

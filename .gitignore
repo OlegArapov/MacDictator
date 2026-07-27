@@ -5,9 +5,9 @@ __pycache__/
 build/
 dist/
 *.dmg
-*.icns
-icon.png
-MacDictator.iconset/
+
+# Иконки лежат в assets/ и хранятся в репозитории: без MacDictator.icns
+# сборка из свежего клона падает (setup.py указывает на него как на iconfile).
 
 .DS_Store
 .vscode/

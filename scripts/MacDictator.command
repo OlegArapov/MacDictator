@@ -1,5 +1,6 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+# Скрипт лежит в scripts/, venv и app.py — в корне проекта.
+cd "$(dirname "$0")/.."
 
 if [ ! -x venv/bin/python ]; then
     echo "venv not found or broken. Creating new venv..."

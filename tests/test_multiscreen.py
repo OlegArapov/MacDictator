@@ -1,4 +1,4 @@
-from multiscreen import bubble_positions
+from macdictator.multiscreen import bubble_positions
 
 
 def test_single_screen_top_center():

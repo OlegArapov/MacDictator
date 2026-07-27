@@ -15,10 +15,13 @@ draw.ellipse([cx - bg_r, cy - bg_r, cx + bg_r, cy + bg_r],
 dot_r = 220
 draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill="#E53935")
 
-png_path = "icon.png"
+# Всё кладём рядом со скриптом, в assets/ — запускают его обычно из корня проекта.
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+png_path = os.path.join(HERE, "icon.png")
 img.save(png_path, "PNG")
 
-iconset = "MacDictator.iconset"
+iconset = os.path.join(HERE, "MacDictator.iconset")
 os.makedirs(iconset, exist_ok=True)
 
 for s in [16, 32, 64, 128, 256, 512, 1024]:
@@ -26,5 +29,6 @@ for s in [16, 32, 64, 128, 256, 512, 1024]:
     if s <= 512:
         img.resize((s * 2, s * 2), Image.LANCZOS).save(f"{iconset}/icon_{s}x{s}@2x.png")
 
-subprocess.run(["iconutil", "-c", "icns", iconset, "-o", "MacDictator.icns"], check=True)
-print("Done: MacDictator.icns")
+icns = os.path.join(HERE, "MacDictator.icns")
+subprocess.run(["iconutil", "-c", "icns", iconset, "-o", icns], check=True)
+print(f"Done: {icns}")

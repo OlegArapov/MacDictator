@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-import file_transcribe as ft
+from macdictator import file_transcribe as ft
 
 
 def test_resample_noop_when_already_16k():

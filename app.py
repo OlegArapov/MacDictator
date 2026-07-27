@@ -38,9 +38,9 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-import file_transcribe
-import progress as _progress
-import multiscreen as _multiscreen
+from macdictator import file_transcribe
+from macdictator import progress as _progress
+from macdictator import multiscreen as _multiscreen
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -1761,7 +1761,8 @@ class DictatorApp(ctk.CTk):
         if getattr(sys, 'frozen', False):
             return  # sys.executable points to the app bundle, not a usable Python
         try:
-            tray_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tray.py")
+            tray_script = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "macdictator", "tray.py")
             if os.path.exists(tray_script):
                 self._tray_proc = subprocess.Popen(
                     [sys.executable, tray_script, str(os.getpid())])

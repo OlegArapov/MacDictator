@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")"
+# Скрипт лежит в scripts/, а собирать надо из корня: там venv, setup.py и app.py.
+cd "$(dirname "$0")/.."
 
 echo "=== Activating venv ==="
 source venv/bin/activate

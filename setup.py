@@ -7,7 +7,7 @@ DATA_FILES = []
 OPTIONS = {
     'argv_emulation': False,
     'strip': False,  # strip fails on .so copied without owner-write bit
-    'iconfile': 'MacDictator.icns',
+    'iconfile': 'assets/MacDictator.icns',
     'plist': {
         'CFBundleName': 'MacDictator',
         'CFBundleDisplayName': 'MacDictator',
@@ -18,6 +18,9 @@ OPTIONS = {
         'NSAppleEventsUsageDescription': 'MacDictator needs accessibility access to paste text.',
     },
     'packages': [
+        # свои модули — папкой, а не внутри python312.zip: tray.py запускается
+        # как отдельный скрипт по пути на диске
+        'macdictator',
         'customtkinter',
         'openai',
         'sounddevice',
