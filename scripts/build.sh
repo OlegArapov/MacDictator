@@ -6,6 +6,29 @@ cd "$(dirname "$0")/.."
 echo "=== Activating venv ==="
 source venv/bin/activate
 
+# mlx и mlx-metal ставятся из колёс под ту macOS, на которой идёт сборка, а
+# mlx.metallib — заранее скомпилированные Metal-кернелы: собранные под свежий
+# SDK, они не грузятся на старых системах («Unable to load kernel …»), обратной
+# совместимости нет. Приложение раздаётся всем, поэтому в venv должны лежать
+# колёса под минимальную поддерживаемую версию (issue #10).
+MIN_MACOS_TAG="macosx_14_0"
+echo "=== Checking MLX wheel platform ==="
+for pkg in mlx mlx_metal; do
+    whl=$(ls -d venv/lib/python3.12/site-packages/${pkg}-*.dist-info/WHEEL 2>/dev/null | head -1)
+    [ -f "$whl" ] || { echo "ERROR: $pkg не установлен" >&2; exit 1; }
+    tag=$(grep -m1 '^Tag:' "$whl" | sed 's/Tag: //')
+    case "$tag" in
+        *"$MIN_MACOS_TAG"*) echo "  $pkg: $tag" ;;
+        *)
+            echo "ERROR: $pkg собран как $tag, а нужен $MIN_MACOS_TAG." >&2
+            echo "Сборка работала бы только на macOS сборочной машины. Переставь:" >&2
+            echo "  venv/bin/pip download mlx==X mlx-metal==X --only-binary=:all: \\" >&2
+            echo "    --platform ${MIN_MACOS_TAG}_arm64 --python-version 3.12 --no-deps -d /tmp/mlxwhl" >&2
+            echo "  venv/bin/pip install --force-reinstall --no-deps /tmp/mlxwhl/*.whl" >&2
+            exit 1 ;;
+    esac
+done
+
 echo "=== Cleaning old build ==="
 rm -rf build dist
 

@@ -9,3 +9,11 @@ pynput
 psutil
 mlx
 mlx-whisper
+
+# Для запуска из исходников подходят любые колёса mlx.
+# Для сборки раздаваемого .app нужны колёса под минимальную поддерживаемую macOS,
+# иначе Metal-кернелы не загрузятся на системах старше сборочной (см. issue #10):
+#   pip download mlx==0.31.1 mlx-metal==0.31.1 --only-binary=:all: \
+#       --platform macosx_14_0_arm64 --python-version 3.12 --no-deps -d /tmp/mlxwhl
+#   pip install --force-reinstall --no-deps /tmp/mlxwhl/*.whl
+# build.sh проверяет это перед сборкой и падает, если колёса не те.

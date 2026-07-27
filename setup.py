@@ -12,8 +12,10 @@ OPTIONS = {
         'CFBundleName': 'MacDictator',
         'CFBundleDisplayName': 'MacDictator',
         'CFBundleIdentifier': 'com.macdictator.app',
-        'CFBundleVersion': '1.0.10',
-        'CFBundleShortVersionString': '1.0.10',
+        'CFBundleVersion': '1.0.11',
+        'CFBundleShortVersionString': '1.0.11',
+        # нижняя граница задана колёсами mlx: Metal-кернелы собраны под этот SDK
+        'LSMinimumSystemVersion': '14.0',
         'NSMicrophoneUsageDescription': 'MacDictator needs microphone access for speech-to-text.',
         'NSAppleEventsUsageDescription': 'MacDictator needs accessibility access to paste text.',
     },
