@@ -51,6 +51,18 @@ OPTIONS = {
         'Quartz',
     ],
     'frameworks': [],
+    # torch приезжает зависимостью mlx-whisper, но внутри пакета его импортирует
+    # только torch_whisper.py — конвертер оригинальных весов Whisper в формат MLX,
+    # на который не ссылается ни один модуль (__init__ тянет audio, decoding,
+    # load_models, transcribe). В транскрибации torch не участвует, а вместе с
+    # sympy занимает половину бандла. scipy и numba не трогать: transcribe.py
+    # импортирует timing.py на уровне модуля (issue #11).
+    'excludes': [
+        'torch',
+        'torchgen',
+        'sympy',
+        'pygments',
+    ],
 }
 
 setup(
